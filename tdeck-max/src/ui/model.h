@@ -100,7 +100,7 @@ bool batteryEstimated=false,batteryCharging=false,batteryFull=false;
  // Contacts menu: contactDialog 0 none, 1 delete oldest, 2 delete all; contactButton 0 amounts, 1 DELETE, 2 CANCEL. contactFocus -1 = the menu button.
  bool contactMenu=false,contactAddNew=true,contactReplace=false;int contactMenuFocus=0,contactDialog=0,contactButton=2,contactAmount=0,contactSaved=0,contactDeletable=0,contactCapacity=0;
  bool radioPowerEditing=false;std::string radioPowerInput;
- int radioEditField=4,radioPreset=-1,radioBand=868,radioPathBytes=2,radioDeviceFocus=0;bool radioDraftChanged=false,radioDevicePage=false;
+int radioEditField=4,radioPreset=-1,radioBand=868,radioPathBytes=2,radioDeviceFocus=0;bool radioDraftChanged=false,radioDevicePage=false,radioRepeat=false;
  bool radioReady=false,radioInternal=true,radioTX=false;
  bool advertGps=false;// the adverts carry the position
  int radioError=0,radioSF=8,radioCR=8,radioPower=matter::MAX_TX_POWER,radioFocus=0,radioQueued=0,nodeCount=0,nodeScroll=0;

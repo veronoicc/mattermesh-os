@@ -688,17 +688,19 @@ void Renderer::section(const State &s){
   g.drawFastHLine(0,Top-1,W,BG);
   auto tab=[&](Rect r,const char *label,bool selected){c.card(r,false,5);g.fillRect(r.x,r.y+r.h-5,r.w,5,BG);g.drawFastVLine(r.x,r.y+r.h-5,5,FG);g.drawFastVLine(r.x+r.w-1,r.y+r.h-5,5,FG);c.centered(r.x,r.y+(r.h-13)/2,r.w,label,selected?Font::Bold:Font::Body,FG);};
   tab(LoRaRadio,"RADIO",!s.radioDevicePage);tab(LoRaDevice,"DEVICE",s.radioDevicePage);
-  if(!s.radioPowerEditing){int tab=s.radioDevicePage?(s.radioDeviceFocus==5?0:s.radioDeviceFocus==6?1:-1):(s.radioFocus==8?0:s.radioFocus==9?1:-1);if(tab>=0){auto r=tab?LoRaDevice:LoRaRadio;g.drawFastHLine(r.x+8,r.y+r.h-5,r.w-16,FG);}}
+  if(!s.radioPowerEditing){int tab=s.radioDevicePage?(s.radioDeviceFocus==LoRaRadioTabFocus?0:s.radioDeviceFocus==LoRaDeviceTabFocus?1:-1):(s.radioFocus==8?0:s.radioFocus==9?1:-1);if(tab>=0){auto r=tab?LoRaDevice:LoRaRadio;g.drawFastHLine(r.x+8,r.y+r.h-5,r.w-16,FG);}}
   if(s.radioDevicePage){
    c.card(LoRaName,s.radioDeviceFocus==0,5);auto ink=s.radioDeviceFocus==0?BG:FG;
    c.text(LoRaName.x+8,LoRaName.y+7,"Companion name",Font::ChatMeta,ink);
    c.text(LoRaName.x+8,LoRaName.y+28,s.radioName,Font::ChatBody,ink,LoRaName.w-16);
    c.text(LoRaInset,LoRaBytesY-23,"Path hash bytes",Font::ChatBody);
    for(int bytes=1;bytes<=3;bytes++){auto r=loraBytesRect(bytes);c.button(r,std::to_string(bytes),s.radioPathBytes==bytes);if(s.radioDeviceFocus==bytes)g.drawRect(r.x-2,r.y-2,r.w+4,r.h+4,FG);}
-   c.text(LoRaInset,LoRaBytesY+47,"Bytes per repeater / outgoing flood",Font::ChatMeta,FG,LoRaContentW);
-   c.text(LoRaInset,LoRaBytesY+63,"Saved direct paths stay unchanged",Font::ChatMeta,FG,LoRaContentW);
-   c.button(LoRaDeviceApply,s.radioDraftChanged?"APPLY *":"APPLY",s.radioDeviceFocus==4);
-   c.text(LoRaInset,Top+238,s.notice.empty()?"W S: select / Enter: edit":s.notice,Font::ChatMeta,FG,LoRaContentW);
+   c.text(LoRaInset,LoRaBytesY+36,"Bytes per repeater / outgoing flood",Font::ChatMeta,FG,LoRaContentW);
+   c.text(LoRaInset,LoRaBytesY+52,"Saved direct paths stay unchanged",Font::ChatMeta,FG,LoRaContentW);
+   c.toggleRow(LoRaRepeat,Icon::Radio,"Repeat",s.radioRepeat?"Forwarding":"Off",s.radioRepeat);if(s.radioDeviceFocus==LoRaRepeatFocus)g.drawRoundRect(LoRaRepeat.x-2,LoRaRepeat.y-2,LoRaRepeat.w+4,LoRaRepeat.h+4,Radius,FG);
+   c.text(LoRaInset,LoRaRepeatHintY,LoRaRepeatHint,Font::ChatMeta,FG,LoRaContentW);
+   c.button(LoRaDeviceApply,s.radioDraftChanged?"APPLY *":"APPLY",s.radioDeviceFocus==LoRaApplyFocus);
+   c.text(LoRaInset,Top+246,s.notice.empty()?"W S: select / Enter: edit":s.notice,Font::ChatMeta,FG,LoRaContentW);
   }else{
   c.text(LoRaInset,Top+2,s.radioReady?(s.radioTX?"TX active":s.radioQueued?"TX queued / RX":"RX ready"):("Radio error "+std::to_string(s.radioError)),Font::ChatMeta,FG,110);
   c.text(W-LoRaInset-100,Top+2,std::string(s.radioInternal?"INT":"EXT")+" / paths "+std::to_string(s.radioPathBytes)+"B",Font::ChatMeta,FG,100);

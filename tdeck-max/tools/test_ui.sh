@@ -7,6 +7,8 @@ g++ -std=c++17 -O2 -Isrc sim/test_message_banner.cpp -o artifacts/test-message-b
 artifacts/test-message-banner
 g++ -std=c++17 -O2 -DARDUINO=10800 -Isim/stubs -Isrc -I'hardware/lib/Adafruit GFX Library' sim/test_ui.cpp src/ui/components.cpp src/ui/artwork.cpp src/ui/renderer.cpp 'hardware/lib/Adafruit GFX Library/Adafruit_GFX.cpp' artifacts/qrcodegen.o -o artifacts/test-ui
 artifacts/test-ui
+g++ -std=c++17 -O2 -DARDUINO=10800 -Isim/stubs -Isrc -I'hardware/lib/Adafruit GFX Library' sim/test_repeat_ui.cpp src/ui/components.cpp src/ui/artwork.cpp src/ui/renderer.cpp 'hardware/lib/Adafruit GFX Library/Adafruit_GFX.cpp' artifacts/qrcodegen.o -o artifacts/test-repeat-ui
+artifacts/test-repeat-ui
 g++ -std=c++17 -O2 -DARDUINO=10800 -Isim/stubs -Isrc -I'hardware/lib/Adafruit GFX Library' sim/test_contacts_ui.cpp src/ui/components.cpp src/ui/artwork.cpp src/ui/renderer.cpp 'hardware/lib/Adafruit GFX Library/Adafruit_GFX.cpp' artifacts/qrcodegen.o -o artifacts/test-contacts-ui
 g++ -std=c++17 -O2 -DARDUINO=10800 -Isim/stubs -Isrc -I'hardware/lib/Adafruit GFX Library' sim/test_flag_text.cpp src/ui/components.cpp 'hardware/lib/Adafruit GFX Library/Adafruit_GFX.cpp' -o artifacts/test-flag-text
 artifacts/test-flag-text

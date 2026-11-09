@@ -46,6 +46,7 @@ extern "C"{
 #include "ui/keyboard_navigation.h"
 #include "ui/refresh.h"
 #include "ui/build_info.h"
+#include "ui/repeat_toggle.h"
 #include <time.h>
 #include <esp_system.h>
 #include <ArduinoJson.h>
@@ -657,6 +658,7 @@ mm::State uiState(){
  v.keyboardLight=keyboardBrightness;v.displayLight=displayBrightness;v.notice=notice.c_str();v.input=input.c_str();v.inputCursor=cursorAt();v.composerExpanded=input.length()>0;v.messageLimit=messageByteLimit();v.focus=homeSelection;v.scroll=homeScroll;
  auto radio=matter::snapshot();v.status.mesh=radio.ready;v.radioReady=radio.ready;v.radioInternal=radio.internal;v.status.antennaInternal=radio.internal;
 v.advertGps=advertGps;v.radioTX=radio.tx;v.radioError=radio.error;v.radioFrequency=radio.config.frequency;v.radioBW=radio.config.bandwidth;v.radioSF=radio.config.sf;v.radioCR=radio.config.cr;v.radioPower=radio.config.power;v.radioPowerEditing=radioPowerEditing;v.radioPowerInput=radioPowerInput.c_str();v.radioName=radio.config.name.c_str();v.radioPathBytes=radio.config.pathBytes;v.radioDevicePage=radioDevicePage;v.radioDeviceFocus=radioDeviceFocus;v.radioPacketsRX=radio.received;v.radioPacketsTX=radio.sent;v.radioQueued=radio.queued;v.nodeCount=radio.nodes;v.radioFocus=radioFocus;v.nodeScroll=nodeScroll;
+v.radioRepeat=matter::repeatEnabled();
  if(section==2&&radioDraftLoaded){v.radioName=radioDraft.name.c_str();v.radioPathBytes=radioDraft.pathBytes;v.radioFrequency=radioDraft.frequency;v.radioBW=radioDraft.bandwidth;v.radioSF=radioDraft.sf;v.radioCR=radioDraft.cr;v.radioPower=radioDraft.power;v.radioEditField=radioEditField;v.radioPreset=radioPresetSelection;v.radioBand=radioBandSelection;v.radioDraftChanged=radioDraft.name!=radio.config.name||radioDraft.pathBytes!=radio.config.pathBytes||radioDraft.frequency!=radio.config.frequency||radioDraft.bandwidth!=radio.config.bandwidth||radioDraft.sf!=radio.config.sf||radioDraft.cr!=radio.config.cr||radioDraft.power!=radio.config.power;}
  if(!deviceLocked&&screen==Screen::Section&&section==1){auto page=matter::contacts(discoverFilter,contactQuery.c_str(),nodeScroll,mm::ContactRows);v.contactMenu=contactMenu;v.contactMenuFocus=contactMenuFocus;v.contactDialog=contactDialog;v.contactButton=contactButton;v.contactAmount=contactAmount;v.contactDeletable=contactDeletable;v.contactAddNew=matter::contactsAddNew();v.contactReplace=matter::contactsReplaceOldest();if(contactMenu||contactDialog)v.contactSaved=matter::contactsCount(0,"");v.contactCapacity=matter::NODE_CAPACITY;time_t epochNow=time(nullptr);v.filteredNodeCount=page.total;v.contactQuery=contactQuery.c_str();v.contactSearching=contactSearching;v.contactFocus=contactFocus;auto gps=device::locationState();bool here=gps.fix&&(gps.latitude!=0||gps.longitude!=0);for(auto &n:page.rows){mm::Node node;node.name=n.name.c_str();node.key=n.key.c_str();node.type=n.type;node.live=n.live;node.age=n.live?(millis()-n.seen)/1000:n.advertAt&&epochNow>=MM_EPOCH_MIN&&uint32_t(epochNow)>=n.advertAt?uint32_t(epochNow)-n.advertAt:~0u;node.rssi=n.rssi;node.snr=n.snr;node.hops=n.hops;if(here&&(n.lat||n.lon)){double lat=n.lat/1e6,lon=n.lon/1e6;node.distance=mm::formatDistance(mm::geoDistanceMeters(gps.latitude,gps.longitude,lat,lon),mm::geoHeading(gps.latitude,gps.longitude,lat,lon));}v.nodes.push_back(node);}}
  if(!accentContext())accentTaps=0;// a tap armed in a chat ends when the chat or quick reply does
@@ -1012,7 +1014,8 @@ void applyRadioDraft(){
 static void setAdvertGps(bool on){advertGps=on;device::prefPutInt("mmadvert","gps",on);notice=on?"Adverts carry your position":"Adverts without position";render();}
 // Sent with the last known position, also with the receiver off; none yet: without.
 static void sendAdvert(){auto g=device::locationState();const bool position=advertGps&&g.configured;if(matter::advertise(notice,position,g.latitude,g.longitude)&&advertGps&&!position)notice="Advert queued, no position yet";render();}
-void selectLoRaTab(bool device,bool focusTab=false){radioDevicePage=device;radioFocus=device?9:8;radioDeviceFocus=focusTab?(device?6:5):0;notice="";render();}
+void toggleRepeat(){mm::repeatToggle(matter::repeatEnabled(),[](bool on,String &reason){return matter::setRepeat(on,reason);},notice);render();}
+void selectLoRaTab(bool device,bool focusTab=false){radioDevicePage=device;radioFocus=device?9:8;radioDeviceFocus=focusTab?(device?mm::LoRaDeviceTabFocus:mm::LoRaRadioTabFocus):0;notice="";render();}
 void activateRadioFocus(){if(radioFocus==0)cycleRadioPreset(1);else if(radioFocus<=5)editRadioField(radioFocus-1);else if(radioFocus==6)applyRadioDraft();else if(radioFocus>=8)selectLoRaTab(radioFocus==9);else sendAdvert();}
 
 void back() {
@@ -1265,8 +1268,8 @@ void key(char c) {
  }
  if(screen==Screen::Section){
   if(section==2&&radioDevicePage&&!radioPowerEditing){
-   if(c=='w'||c=='k'||c=='s'||c=='j'){radioDeviceFocus=constrain(radioDeviceFocus+((c=='s'||c=='j')?1:-1),0,6);render();}
-   else if(radioDeviceFocus>=5&&(c=='a'||c=='d'))selectLoRaTab(c=='d',true);else if(c=='a')back();else if(c=='d'||c=='\n'){if(!radioDeviceFocus)editRadioField(CompanionNameField);else if(radioDeviceFocus<=3){radioDraft.pathBytes=radioDeviceFocus;notice="Edits ready / press APPLY";render();}else if(radioDeviceFocus==4)applyRadioDraft();else selectLoRaTab(radioDeviceFocus==6);}return;
+   if(c=='w'||c=='k'||c=='s'||c=='j'){radioDeviceFocus=constrain(radioDeviceFocus+((c=='s'||c=='j')?1:-1),0,mm::LoRaDeviceTabFocus);render();}
+   else if(radioDeviceFocus>=mm::LoRaRadioTabFocus&&(c=='a'||c=='d'))selectLoRaTab(c=='d',true);else if(c=='a')back();else if(c=='d'||c=='\n'){if(!radioDeviceFocus)editRadioField(CompanionNameField);else if(radioDeviceFocus<=3){radioDraft.pathBytes=radioDeviceFocus;notice="Edits ready / press APPLY";render();}else if(radioDeviceFocus==mm::LoRaRepeatFocus)toggleRepeat();else if(radioDeviceFocus==mm::LoRaApplyFocus)applyRadioDraft();else selectLoRaTab(radioDeviceFocus==mm::LoRaDeviceTabFocus);}return;
   }
   if(section==2&&!radioPowerEditing){
    if(c=='w'||c=='k'||c=='s'||c=='j'){radioFocus=constrain(radioFocus+((c=='s'||c=='j')?1:-1),0,9);render();}
@@ -1487,7 +1490,7 @@ void tap(int x,int y) {
   if(section==2){
    if(radioPowerEditing){if(mm::RadioPowerSave.contains(x,y))saveRadioPower();else if(mm::RadioPowerCancel.contains(x,y)){radioPowerEditing=false;notice="";render();}return;}
    if(mm::LoRaRadio.contains(x,y)){selectLoRaTab(false);return;}if(mm::LoRaDevice.contains(x,y)){selectLoRaTab(true);return;}
-   if(radioDevicePage){if(mm::LoRaName.contains(x,y)){radioDeviceFocus=0;editRadioField(CompanionNameField);}else if(mm::LoRaDeviceApply.contains(x,y))applyRadioDraft();else for(int bytes=1;bytes<=3;bytes++)if(mm::loraBytesRect(bytes).contains(x,y)){radioDeviceFocus=bytes;radioDraft.pathBytes=bytes;notice="Edits ready / press APPLY";render();break;}return;}
+   if(radioDevicePage){if(mm::LoRaName.contains(x,y)){radioDeviceFocus=0;editRadioField(CompanionNameField);}else if(mm::LoRaRepeat.contains(x,y)){radioDeviceFocus=mm::LoRaRepeatFocus;toggleRepeat();}else if(mm::LoRaDeviceApply.contains(x,y))applyRadioDraft();else for(int bytes=1;bytes<=3;bytes++)if(mm::loraBytesRect(bytes).contains(x,y)){radioDeviceFocus=bytes;radioDraft.pathBytes=bytes;notice="Edits ready / press APPLY";render();break;}return;}
    if(mm::LoRaBand868.contains(x,y))selectRadioBand(868);else if(mm::LoRaBand915.contains(x,y))selectRadioBand(915);
    else if(mm::LoRaPresetPrev.contains(x,y))cycleRadioPreset(-1);else if(mm::LoRaPresetNext.contains(x,y))cycleRadioPreset(1);
    else if(mm::LoRaPreset.contains(x,y))cycleRadioPreset(1);

@@ -208,11 +208,15 @@ constexpr Rect ContactPopup={10,Top+6,W-20,ContactMenuHeadH+ContactMenuRows*Cont
 inline Rect contactMenuRow(int i){return {ContactPopup.x+3,ContactPopup.y+ContactMenuHeadH+i*ContactMenuRowH,ContactPopup.w-6,ContactMenuRowH-2};}
 constexpr int ContactDeleteSteps=4;constexpr int ContactDeleteAmounts[ContactDeleteSteps]={50,100,250,500};
 inline Rect contactAmountRect(int i){int w=(W-2*Margin-16-3*6)/4;return {Margin+8+i*(w+6),Top+46,w,28};}
-constexpr Rect LoRaName={LoRaInset,Top+12,LoRaContentW,56};
-constexpr int LoRaBytesY=Top+105;
+constexpr Rect LoRaName={LoRaInset,Top+6,LoRaContentW,50};
+constexpr int LoRaBytesY=Top+82;
 constexpr int LoRaByteGap=4,LoRaByteW=(LoRaContentW-2*LoRaByteGap)/3;
-inline Rect loraBytesRect(int bytes){return {LoRaInset+(bytes-1)*(LoRaByteW+LoRaByteGap),LoRaBytesY,LoRaByteW,34};}
-constexpr Rect LoRaDeviceApply={LoRaInset,Top+190,LoRaContentW,32};
+inline Rect loraBytesRect(int bytes){return {LoRaInset+(bytes-1)*(LoRaByteW+LoRaByteGap),LoRaBytesY,LoRaByteW,30};}
+// Device page, in focus order: name 0, path bytes 1-3, Repeat switch (toggleRow, 40 px) 4, APPLY 5, RADIO / DEVICE tabs 6 / 7.
+constexpr Rect LoRaRepeat={LoRaInset,Top+150,LoRaContentW,40};
+constexpr int LoRaRepeatFocus=4,LoRaApplyFocus=5,LoRaRadioTabFocus=6,LoRaDeviceTabFocus=7,LoRaRepeatHintY=Top+192;
+constexpr const char *LoRaRepeatHint="Relays others' packets, keeps RX";
+constexpr Rect LoRaDeviceApply={LoRaInset,Top+212,LoRaContentW,28};
 constexpr int MenuHomeRows=3,MenuHomeRowY=80,MenuHomeRowH=58,MenuHomeRowGap=6;
 constexpr int MenuHomeTabCount=4,MenuHomeTabY=272,MenuHomeTabH=44,MenuHomeTabGap=4;
 constexpr int MenuHomeTabW=(W-2*Margin-(MenuHomeTabCount-1)*MenuHomeTabGap)/MenuHomeTabCount,MenuHomeTabIcon=24,MenuHomeTabLabelY=30;
