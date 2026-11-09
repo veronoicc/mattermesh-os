@@ -18,7 +18,7 @@ int main(){
  for(const char *c:{"ver","clock","uptime","get name","get radio","get freq","get bw","get sf","get cr","get tx","get public.key","get role","get lat","get lon","set name Foo Bar","set radio 869.618,62.5,8,8","set tx 14","advert","neighbors","stats-radio","stats-packets","stats-core","reboot","get   name"}){assert(ask(true,true,c,&ran)==std::string("OUT:")+c&&ran==1);}
  assert(ask(true,true,"  get name",&ran)=="OUT:get name"&&ran==1);// leading spaces are skipped, as MyMesh does
  // The device-local commands and anything else are unknown and never reach the device CLI.
- for(const char *c:{"clear","help","log start","log stop","gps","gps on","board","get","get foo","set","set gps on","versions","getname","xyzzy","get/name",""}){assert(ask(true,true,c,&ran)=="Unknown command"&&!ran);}
+ for(const char *c:{"clear","help","log start","log stop","gps","gps on","board","get","get foo","set","set gps on","versions","getname","xyzzy","get/name","","get wifi.enabled","get wifi.status","get wifi.ip","get wifi.ssid","set wifi.enabled 1","set wifi.ssid x","set wifi.pwd x","set wifi.clear"}){assert(ask(true,true,c,&ran)=="Unknown command"&&!ran);}
  // A command the device does not know is unknown as well.
  answer=0;assert(ask(true,true,"ver",&ran)=="Unknown command"&&ran==1);answer=1;
  // MeshCore's optional "xx|" prefix is reflected in front of the answer.

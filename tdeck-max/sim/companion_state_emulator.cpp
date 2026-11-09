@@ -248,6 +248,11 @@ void cli(){
  assert(r.ask({66,'x'})==UNSUPPORTED);// len < 3
  r.env.cliReply=std::string(300,'a');got=r.ask(in);assert(got.size()==1+165&&got[0]==29);// reply capped like MyMesh's 166 byte buffer
  Bytes tx(cs::MAX_FRAME,'z');tx[0]=66;r.env.cliReply="x";r.ask(tx);assert(r.env.cliSeen.size()==cs::MAX_FRAME-1);
+ // Stock "xx|" prefix: reflected first in every reply, the hook sees only the text after it.
+ r.env.cliReply="> 1";got=r.ask({66,'0','1','|','g','e','t',' ','w'});assert(r.env.cliSeen=="get w"&&got==(Bytes{29,'0','1','|','>',' ','1'}));
+ r.env.cliReply="";got=r.ask({66,'0','1','|','g','e','t',' ','b'});assert(got==cat({{29},Bytes{'0','1','|','U','n','k','n','o','w','n',' ','c','o','m','m','a','n','d'}}));
+ r.env.cliReply="x";r.ask({66,'a','b','|','z'});assert(r.env.cliSeen=="ab|z");// 4 chars or fewer: no prefix
+ r.ask({66,'a','b','|','z','y'});assert(r.env.cliSeen=="zy");
  printf("cli: text forwarded NUL-terminated, reply framed 29, unknown command text, short frame, reply cap\n");
 }
 

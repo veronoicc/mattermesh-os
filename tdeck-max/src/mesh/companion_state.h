@@ -175,9 +175,10 @@ template<class L,class W> bool handle(Module &m,const uint8_t *in,size_t len,W &
   case CMD_RUN_CLI_COMMAND:{
    if(len<3){n=error(out,ERR_UNSUPPORTED);break;}
    char text[MAX_FRAME+1],reply[CLI_REPLY_MAX];memcpy(text,in+1,len-1);text[len-1]=0;reply[0]=0;
-   size_t r=m.hooks.runCli(m.hooks.ctx,text,reply,sizeof(reply));
-   if(!r){strcpy(reply,"Unknown command");r=strlen(reply);}
-   if(r>=sizeof(reply))r=sizeof(reply)-1;out[0]=RESP_CLI_REPLY;memcpy(out+1,reply,r);n=1+r;break;}
+   size_t pre=strlen(text)>4&&text[2]=='|'?3:0;memcpy(reply,text,pre);// stock reflects the optional "xx|" prefix first
+   size_t r=m.hooks.runCli(m.hooks.ctx,text+pre,reply+pre,sizeof(reply)-pre);
+   if(!r){strcpy(reply+pre,"Unknown command");r=strlen("Unknown command");}
+   r+=pre;if(r>=sizeof(reply))r=sizeof(reply)-1;out[0]=RESP_CLI_REPLY;memcpy(out+1,reply,r);n=1+r;break;}
   default:return false;
  }
  write(out,n);return true;

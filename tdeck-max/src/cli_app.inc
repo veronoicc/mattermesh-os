@@ -16,6 +16,7 @@ static std::string cliName(){return matter::snapshot().config.name.c_str();}
 static std::string cliPrompt(){return cliName()+"> ";}
 // While the app runs a command (cliRunBuffer) the lines go to its reply instead of the screen.
 static std::string *cliCapture=nullptr;static bool cliUnknown=false;
+void appWifiToggle();bool appWifiIsOn();static std::string cliWifiSsid,cliWifiJoined;// ssid staged by "set wifi.ssid" until "set wifi.pwd"; the network that join saved
 static void cliPrint(const std::string &line){if(cliCapture){if(!cliCapture->empty())*cliCapture+='\n';*cliCapture+=line;return;}cliOutput.push_back(line);if(int(cliOutput.size())>CLI_OUTPUT_MAX)cliOutput.erase(cliOutput.begin(),cliOutput.begin()+(cliOutput.size()-CLI_OUTPUT_MAX));cliScrollLines=0;}
 static void cliSync(){cliMirror=cliLine.text.c_str();}
 static void cliOpen(){if(cliOutput.empty()){cliPrint("MatterMesh CLI");cliPrint("Connected to "+cliName());cliPrint("Type 'help' for available commands.");cliPrint("");}cliScrollLines=0;cliSync();}
@@ -50,7 +51,12 @@ static void cliExec(const std::string &command){
   else if(arg=="public.key"){std::string key=matter::ownKey().c_str();cliPrint(key.empty()?"Identity not ready":key);}
   else if(arg=="role")cliPrint("companion");
   else if(arg=="lat"||arg=="lon"){auto gps=device::locationState();if(!gps.configured)cliPrint("Position unknown");else{snprintf(text,sizeof(text),"%.6f",arg=="lat"?gps.latitude:gps.longitude);cliPrint(text);}}
-  else cliPrint("Usage: get name|radio|freq|bw|sf|cr|tx|public.key|role|lat|lon");
+  // Wi-Fi, stock replies of the companion CLI (the app's Wi-Fi settings screen): "enabled" is the App over Wi-Fi switch.
+  else if(arg=="wifi.enabled")cliPrint(appWifiIsOn()?"> 1":"> 0");
+  else if(arg=="wifi.status")cliPrint(device::wifiConnected()?"> connected":"> disconnected");
+  else if(arg=="wifi.ip")cliPrint(device::wifiConnected()?"> "+std::string(WiFi.localIP().toString().c_str()):"> (not connected)");
+  else if(arg=="wifi.ssid"){std::string ssid=cliWifiSsid.empty()?std::string(device::connectivityStatus().ssid.c_str()):cliWifiSsid;cliPrint("> "+(ssid.empty()?std::string("(not set)"):ssid));}
+  else{cliUnknown=cliCapture!=nullptr;cliPrint("Usage: get name|radio|freq|bw|sf|cr|tx|public.key|role|lat|lon");}// the app's CLI answers "Unknown command"
  }
  else if(verb=="set"){
   if(arg=="name"){std::string name=rest(2);if(name.empty()||name.size()>31)cliPrint("Usage: set name <1..31 bytes>");else{config.name=name.c_str();cliApply(config,"OK - name saved");}}
@@ -58,7 +64,11 @@ static void cliExec(const std::string &command){
    if(sscanf(value.c_str(),"%15[^,],%15[^,],%15[^,],%15s",a,bb,c,d)!=4||!matter::parseRadioField(matter::Frequency,a,f)||!matter::parseRadioField(matter::Bandwidth,bb,b)||!matter::parseRadioField(matter::SpreadFactor,c,sf)||!matter::parseRadioField(matter::CodingRate,d,cr))cliPrint("Usage: set radio <freq,bw,sf,cr> e.g. 869.618,62.5,8,8");
    else{config.frequency=f;config.bandwidth=b;config.sf=uint8_t(sf);config.cr=uint8_t(cr);cliApply(config,"OK - radio restarted");}}
   else if(arg=="tx"){float p;if(w.size()<3||!matter::parseRadioField(matter::TxPower,w[2].c_str(),p)){snprintf(text,sizeof(text),"Usage: set tx <%d..%d dBm>",matter::MIN_TX_POWER,matter::MAX_TX_POWER);cliPrint(text);}else{config.power=int8_t(p);cliApply(config,"OK - TX power saved");}}
-  else cliPrint("Usage: set name|radio|tx <value>");
+  else if(arg=="wifi.enabled"){if(w.size()<3||(w[2]!="0"&&w[2]!="1"))cliPrint("Error, expected 0 or 1");else{if((w[2]=="1")!=appWifiIsOn())appWifiToggle();cliPrint("> wifi.enabled is now "+w[2]);}}// applies at once, no reboot
+  else if(arg=="wifi.ssid"){std::string ssid=rest(2);if(ssid.empty()||ssid.size()>32)cliPrint("Error, ssid 1-32 bytes");else{cliWifiSsid=ssid;cliPrint("> wifi.ssid is now "+ssid+" (set wifi.pwd too)");}}// staged: the app sends the password next
+  else if(arg=="wifi.pwd"){if(cliWifiSsid.empty())cliPrint("Error, set wifi.ssid first");else if(device::connect(cliWifiSsid.c_str(),rest(2).c_str())){cliWifiJoined=cliWifiSsid;cliWifiSsid.clear();cliPrint("> wifi.pwd updated");}else cliPrint("Error, invalid ssid/password");}
+  else if(arg=="wifi.clear"){cliWifiSsid.clear();if(!cliWifiJoined.empty())device::forgetNetwork(cliWifiJoined.c_str());cliWifiJoined.clear();cliPrint("> wifi config cleared");}// forgets the network the app joined (until reboot)
+  else{cliUnknown=cliCapture!=nullptr;cliPrint("Usage: set name|radio|tx <value>");}
  }
  else if(verb=="advert"){String reason;cliPrint(matter::advertise(reason)?"OK - advert sent":std::string("Error: ")+reason.c_str());}
  else if(verb=="neighbors"){

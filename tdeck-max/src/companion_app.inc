@@ -71,6 +71,7 @@ void appLinkBegin(){
  device::bleCompanionConfig(matter::snapshot().config.name,appPinValue);// before connectivityBegin(): the BLE name comes from the node name
 }
 void appWifiToggle(){appWifiEnabled=!appWifiEnabled;device::prefPutInt("mmble","tcp",appWifiEnabled?1:0);if(!appWifiEnabled&&appServerOn){if(appClient)appClient.stop();appServer.end();appServerOn=false;}}
+bool appWifiIsOn(){return appWifiEnabled;}
 void appCliToggle(){if(!matter::setRemoteCli(!matter::remoteCli()))notice="Cannot save setting";}// Settings > Bluetooth > Remote CLI
 // USB: called by the serial reader for the bytes after a '<' at the start of a line.
 static uint8_t appUsbBuf[matter::COMPANION_FRAME_MAX];static int appUsbState=0;static uint16_t appUsbLen=0,appUsbGot=0;

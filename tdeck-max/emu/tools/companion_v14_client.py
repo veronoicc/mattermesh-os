@@ -36,6 +36,22 @@ def main():
     assert rq(41, *b"gps:1") == bytes([0]) and rq(40) == b"\x15gps:1"
     assert rq(41, *b"foo:1") == bytes([1, 6])
     assert b"Unknown command" in rq(66, *b"xyzzy") and rq(66, *b"get name")[0] == 29
+    def cli(text):
+        r = rq(66, *text.encode()); assert r[0] == 29, r.hex()
+        return r[1:].decode()
+    # the app's "xx|" prefix is reflected first; the Wi-Fi CLI answers like stock (the emulator is joined to EMU-WiFi, app wifi on)
+    assert cli("01|get wifi.enabled") == "01|> 1"
+    assert cli("02|get wifi.status") == "02|> connected"
+    assert cli("03|get wifi.ssid") == "03|> EMU-WiFi"
+    ip = cli("04|get wifi.ip"); assert ip.startswith("04|> ") and "not connected" not in ip and ip.count(".") == 3, ip
+    assert cli("01|get buzzer") == "01|Unknown command"
+    assert cli("05|set wifi.enabled 1") == "05|> wifi.enabled is now 1"
+    assert cli("06|set wifi.ssid Foo Net") == "06|> wifi.ssid is now Foo Net (set wifi.pwd too)"
+    assert cli("07|get wifi.ssid") == "07|> Foo Net"
+    assert cli("08|set wifi.clear") == "08|> wifi config cleared"
+    assert cli("09|get wifi.ssid") == "09|> EMU-WiFi"
+    assert cli("10|set wifi.pwd secretpw1") == "10|Error, set wifi.ssid first"
+    assert cli("get wifi.status") == "> connected"
     assert rq(64) == bytes([28])
     key = bytes(range(1, 32)) + b"\x07"
     assert rq(63, *b"IT-TOS".ljust(31, b"\0"), *key)[0] == 0
