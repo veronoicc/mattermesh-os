@@ -31,7 +31,10 @@ def main():
     rq(21, *struct.pack("<II", 0, 9000))
     for t in (0, 1, 2):
         r = rq(56, t); assert r[0] == 24 and r[1] == t, r.hex()
-    assert rq(40) == bytes([21])
+    assert rq(40) == b"\x15gps:1"  # the emulated Max has its GPS, on by default
+    assert rq(41, *b"gps:0") == bytes([0]) and rq(40) == b"\x15gps:0"
+    assert rq(41, *b"gps:1") == bytes([0]) and rq(40) == b"\x15gps:1"
+    assert rq(41, *b"foo:1") == bytes([1, 6])
     assert b"Unknown command" in rq(66, *b"xyzzy") and rq(66, *b"get name")[0] == 29
     assert rq(64) == bytes([28])
     key = bytes(range(1, 32)) + b"\x07"

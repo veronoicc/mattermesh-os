@@ -92,6 +92,9 @@ struct Hooks {
  void (*reboot)(void*)=nullptr;
  bool (*installIdentity)(void*,const mesh::LocalIdentity&)=nullptr;
  size_t (*runCli)(void*,const char*,char*,size_t)=nullptr;
+ bool (*gpsAvailable)(void*)=nullptr;// a GPS module is present: only then is "gps" a custom variable
+ bool (*gpsEnabled)(void*)=nullptr;
+ bool (*setGps)(void*,bool)=nullptr;
 };
 struct Module {Hooks hooks;Tuning tuning;AdvertPaths adverts;mesh::LocalIdentity *self=nullptr;};
 
@@ -150,8 +153,12 @@ template<class L,class W> bool handle(Module &m,const uint8_t *in,size_t len,W &
    if(!m.hooks.saveTuning(m.hooks.ctx,blob,sizeof(blob))){n=error(out,ERR_FILE_IO);break;}// the old values stay
    m.tuning=next;out[0]=RESP_OK;n=1;break;}
   case CMD_GET_TUNING_PARAMS:{uint32_t rx=m.tuning.rxDelayBase*1000,af=m.tuning.airtime*1000;out[0]=RESP_TUNING_PARAMS;memcpy(out+1,&rx,4);memcpy(out+5,&af,4);n=9;break;}
-  case CMD_GET_CUSTOM_VARS:out[0]=RESP_CUSTOM_VARS;n=1;break;// no sensors, so no settings
-  case CMD_SET_CUSTOM_VAR:n=len>=4?error(out,ERR_ILLEGAL_ARG):error(out,ERR_UNSUPPORTED);break;// setSettingValue() has nothing to set
+  case CMD_GET_CUSTOM_VARS:out[0]=RESP_CUSTOM_VARS;n=1;if(m.hooks.gpsAvailable(m.hooks.ctx))n+=snprintf((char*)out+1,16,"gps:%d",m.hooks.gpsEnabled(m.hooks.ctx)?1:0);break;// the GPS is the only sensor setting
+  case CMD_SET_CUSTOM_VAR:{
+   if(len<4){n=error(out,ERR_UNSUPPORTED);break;}
+   char t[MAX_FRAME+1];memcpy(t,in+1,len-1);t[len-1]=0;char *v=strchr(t,':');// "name:value", like setSettingValue()
+   if(!v||strncmp(t,"gps:",4)||!m.hooks.gpsAvailable(m.hooks.ctx)||!m.hooks.setGps(m.hooks.ctx,strcmp(v+1,"0")!=0)){n=error(out,ERR_ILLEGAL_ARG);break;}
+   out[0]=RESP_OK;n=1;break;}
   case CMD_GET_ADVERT_PATH:{
    if(len<2+PUB_KEY_SIZE){n=error(out,ERR_UNSUPPORTED);break;}auto *p=m.adverts.find(in+2);if(!p){n=error(out,ERR_NOT_FOUND);break;}
    out[0]=RESP_ADVERT_PATH;memcpy(out+1,&p->recv_timestamp,4);out[5]=p->path_len;n=6+mesh::Packet::writePath(out+6,p->path,p->path_len);break;}

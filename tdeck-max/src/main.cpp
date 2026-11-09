@@ -1945,6 +1945,8 @@ void handle(const String &s) {
  if(s=="wifi link"){auto w=device::connectivityStatus();StaticJsonDocument<256> json;json["connected"]=w.connected;json["ssid"]=w.connected?w.ssid:String("");json["address"]=w.address;json["rssi"]=w.rssi;json["message"]=w.message;Serial.print("WIFI_LINK ");serializeJson(json,Serial);Serial.println();return;}
  if(s.startsWith("ble name ")){String n=s.substring(9);if(n=="-")n="";bool saved=appSetBleName(n);Serial.printf("BLE_NAME saved=%d name=%s\n",saved,device::bleCompanionName().c_str());return;}// "-" = back to the node name
  if(s=="app status"){Serial.printf("APP_STATUS ble=%d ble_name=%s pin=%lu usb=%d wifi_enabled=%d wifi_server=%d wifi_client=%d remote_cli=%d\n",device::bleCompanionConnected(),device::bleCompanionName().c_str(),(unsigned long)appPinValue,appUsbLinked(),appWifiEnabled,appServerOn,appClient&&appClient.connected(),matter::remoteCli());return;}
+ if(s=="companion trace on"||s=="companion trace off"){appTrace=s.endsWith("on");Serial.printf("COMPANION_TRACE %d\n",appTrace);return;}
+ if(s=="companion stats"){char line[240];matter::companionStatsLine(line,sizeof(line));Serial.println(line);return;}
  if(s=="app wifi"){appWifiToggle();Serial.printf("APP_WIFI %d\n",appWifiEnabled);return;}
  if(s=="remote cli"){appCliToggle();Serial.printf("REMOTE_CLI %d\n",matter::remoteCli());return;}
  if(s=="wifi editor status"){Serial.printf("WIFI_EDITOR editing=%d hidden=%d visible=%d field=%d ssid_bytes=%u password_bytes=%u\n",wifiEditing,wifiHidden,wifiShowPassword,wifiEditField,wifiTarget.length(),wifiPassword.length());return;}

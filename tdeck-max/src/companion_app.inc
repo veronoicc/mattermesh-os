@@ -9,9 +9,13 @@ static WiFiServer appServer(5000);static WiFiClient appClient;static bool appSer
 static uint32_t appUsbAt=0,appTcpAt=0,appBleAt=0;static uint32_t appPinValue=0;
 // Bluetooth name chosen in Settings > Bluetooth (the part after "MeshCore-"; empty = node name). NVS mmble/name.
 static String appBleCustomName;
-static void appBleWrite(void*,const uint8_t *f,size_t n){device::bleCompanionSend(f,n);}
-static void appUsbWrite(void*,const uint8_t *f,size_t n){uint8_t h[3]={'>',uint8_t(n&0xff),uint8_t(n>>8)};Serial.write(h,3);Serial.write(f,n);}
-static void appTcpWrite(void*,const uint8_t *f,size_t n){if(!appClient||!appClient.connected())return;uint8_t buf[3+matter::COMPANION_FRAME_MAX];buf[0]='>';buf[1]=uint8_t(n&0xff);buf[2]=uint8_t(n>>8);memcpy(buf+3,f,n);appClient.write(buf,3+n);}
+// "companion trace on": one COMPANION_RX/COMPANION_TX line per frame, every transport (debug, off by default).
+// NEVER on while a USB companion link is active: these text lines on the same serial port corrupt its framing.
+static bool appTrace=false;
+static void appTraceFrame(const char *dir,const char *transport,const uint8_t *f,size_t n){if(!appTrace)return;char hex[49]="";for(size_t i=0;i<n&&i<24;i++)snprintf(hex+2*i,3,"%02x",f[i]);Serial.printf("COMPANION_%s %s %s len=%u\n",dir,transport,hex,unsigned(n));}
+static void appBleWrite(void*,const uint8_t *f,size_t n){appTraceFrame("TX","ble",f,n);device::bleCompanionSend(f,n);}
+static void appUsbWrite(void*,const uint8_t *f,size_t n){appTraceFrame("TX","usb",f,n);uint8_t h[3]={'>',uint8_t(n&0xff),uint8_t(n>>8)};Serial.write(h,3);Serial.write(f,n);}
+static void appTcpWrite(void*,const uint8_t *f,size_t n){if(!appClient||!appClient.connected())return;appTraceFrame("TX","wifi",f,n);uint8_t buf[3+matter::COMPANION_FRAME_MAX];buf[0]='>';buf[1]=uint8_t(n&0xff);buf[2]=uint8_t(n>>8);memcpy(buf+3,f,n);appClient.write(buf,3+n);}
 bool appUsbLinked(){return appUsbAt&&uint32_t(millis()-appUsbAt)<60000;}// a USB app talked within the last minute
 static uint32_t appPin(){return appPinValue;}
 static bool appSetPin(uint32_t pin){if(!pin)pin=100000+esp_random()%900000;if(!device::prefPutInt("mmble","pin",int(pin)))return false;appPinValue=pin;device::bleCompanionConfig(matter::snapshot().config.name,pin);return true;}
@@ -62,6 +66,7 @@ void appLinkBegin(){
  matter::CompanionHooks h;h.batteryMv=[]()->uint16_t{return uint16_t(device::batteryState().voltage);};
  h.storageUsedKb=[]()->uint32_t{return sdReady?uint32_t(SD.usedBytes()/1024):0;};h.storageTotalKb=[]()->uint32_t{return sdReady?uint32_t(SD.totalBytes()/1024):0;};
  h.reboot=[](){Serial.flush();delay(300);ESP.restart();};h.pin=appPin;h.setPin=appSetPin;h.location=appLocation;h.setLocation=appSetLocation;h.setChannel=appSetChannel;
+ h.gpsAvailable=[]{return device::locationState().available;};h.gpsEnabled=[]{return device::locationState().userEnabled;};h.setGps=[](bool on){return device::locationEnabled(on);};
  h.disableTransports=appStopLinks;h.wipe=appWipe;h.runCli=cliRunBuffer;matter::companionHooks(h);
  device::bleCompanionConfig(matter::snapshot().config.name,appPinValue);// before connectivityBegin(): the BLE name comes from the node name
 }
@@ -76,7 +81,7 @@ bool appUsbByte(uint8_t c){// true while a binary frame is being assembled (the 
  if(appUsbState==0){if(c!='<')return false;appUsbState=1;return true;}
  if(appUsbState==1){appUsbLen=c;appUsbState=2;return true;}
  if(appUsbState==2){appUsbLen|=uint16_t(c)<<8;appUsbGot=0;appUsbState=appUsbLen&&appUsbLen<=matter::COMPANION_FRAME_MAX?3:0;return true;}
- appUsbBuf[appUsbGot++]=c;if(appUsbGot>=appUsbLen){appUsbState=0;appUsbAt=millis();matter::companionFrame(appUsb,appUsbBuf,appUsbLen,appUsbWrite,nullptr);}
+ appUsbBuf[appUsbGot++]=c;if(appUsbGot>=appUsbLen){appUsbState=0;appUsbAt=millis();appTraceFrame("RX","usb",appUsbBuf,appUsbLen);matter::companionFrame(appUsb,appUsbBuf,appUsbLen,appUsbWrite,nullptr);}
  return true;
 }
 // Room in the socket's send buffer now (select with a zero timeout): WiFiClient::write waits up to 10 x 1 s when the
@@ -96,13 +101,13 @@ static void appTcpLoop(){
   uint8_t h[3];appClient.read(h,3);uint16_t n=h[1]|(uint16_t(h[2])<<8);if(!n||n>sizeof(frame)){appClient.stop();return;}// out of sync: the rest would read as frames
   frameLen=n;got=0;frameAt=millis();}
  if(frameLen){int k=appClient.available()>0?appClient.read(frame+got,frameLen-got):0;if(k>0){got+=k;frameAt=millis();}
-  if(got==frameLen){appTcpAt=millis();uint16_t n=frameLen;frameLen=0;matter::companionFrame(appTcp,frame,n,appTcpWrite,nullptr);}
+  if(got==frameLen){appTcpAt=millis();uint16_t n=frameLen;frameLen=0;appTraceFrame("RX","wifi",frame,n);matter::companionFrame(appTcp,frame,n,appTcpWrite,nullptr);}
   else if(millis()-frameAt>2000){frameLen=0;appClient.stop();}}// stalled for 2 s: drop the link, the app reconnects
  for(int k=0;k<16&&appTcpWritable()&&matter::companionPump(appTcp,appTcpWrite,nullptr);k++){}
 }
 void appLinkLoop(){
  uint8_t frame[matter::COMPANION_FRAME_MAX];size_t n=0;
- for(int k=0;k<4&&device::bleCompanionTake(frame,n);k++){appBleAt=millis();matter::companionFrame(appBle,frame,n,appBleWrite,nullptr);}
+ for(int k=0;k<4&&device::bleCompanionTake(frame,n);k++){appBleAt=millis();appTraceFrame("RX","ble",frame,n);matter::companionFrame(appBle,frame,n,appBleWrite,nullptr);}
  // Several frames per loop (one each made a 1000-contact listing take ~100 s); BLE stays at a few notifications
  // so NimBLE's buffers never run out.
  if(device::bleCompanionConnected()){for(int k=0;k<3&&matter::companionPump(appBle,appBleWrite,nullptr);k++){}}else{appBle.listing=false;appBle.active=false;}

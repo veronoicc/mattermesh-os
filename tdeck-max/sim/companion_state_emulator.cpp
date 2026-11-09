@@ -18,7 +18,7 @@ Bytes cat(std::initializer_list<Bytes> parts){Bytes r;for(auto &p:parts)r.insert
 // Test doubles for the firmware facilities, recording what the module did and in which order.
 struct Env {
  std::vector<std::string> log;cs::Stats stats;uint16_t mv=3900;float temp=31.5f;
- bool saveOk=true,wipeOk=true,identityOk=true;uint8_t blob[8]={};size_t blobLen=0;mesh::LocalIdentity installed;bool haveInstalled=false;
+ bool saveOk=true,wipeOk=true,identityOk=true,gpsHere=false,gpsOn=false,gpsFail=false;uint8_t blob[8]={};size_t blobLen=0;mesh::LocalIdentity installed;bool haveInstalled=false;
  std::string cliSeen;std::string cliReply="OK - ok";
  static Env &of(void *c){return *static_cast<Env*>(c);}
  cs::Hooks hooks(){cs::Hooks h;h.ctx=this;
@@ -31,6 +31,8 @@ struct Env {
   h.reboot=[](void *c){of(c).log.push_back("reboot");};
   h.installIdentity=[](void *c,const mesh::LocalIdentity &id){auto &e=of(c);e.log.push_back("identity");if(!e.identityOk)return false;e.installed=id;e.haveInstalled=true;return true;};
   h.runCli=[](void *c,const char *cmd,char *reply,size_t cap){auto &e=of(c);e.cliSeen=cmd;if(e.cliReply.empty())return size_t(0);snprintf(reply,cap,"%s",e.cliReply.c_str());return strlen(reply);};
+  h.gpsAvailable=[](void *c){return of(c).gpsHere;};h.gpsEnabled=[](void *c){return of(c).gpsOn;};
+  h.setGps=[](void *c,bool on){auto &e=of(c);if(e.gpsFail)return false;e.gpsOn=on;return true;};
   return h;}
 };
 struct Rig {
@@ -112,12 +114,20 @@ void tuning(){
 }
 
 void customVars(){
- Rig r;// no sensors: MyMesh's sensors.getNumSettings() is 0
+ Rig r;// no GPS module: MyMesh's sensors.getNumSettings() is 0
  assert(r.ask({40})==Bytes{21});
  assert(r.ask({41,'g','p','s',':','1'})==err(6));// setSettingValue fails: no such setting
  assert(r.ask({41,'a','b','c','d'})==err(6));// no ':' separator
  assert(r.ask({41,'a','b'})==UNSUPPORTED);// len < 4
- printf("custom vars: empty list, every set answers ERR_ILLEGAL_ARG, short frame unsupported\n");
+ // a GPS module: the single setting "gps:<0|1>" (EnvironmentSensorManager), 0 stops it, anything else starts it
+ Rig g;g.env.gpsHere=true;g.env.gpsOn=true;
+ assert(g.ask({40})==Bytes({21,'g','p','s',':','1'}));
+ assert(g.ask({41,'g','p','s',':','0'})==Bytes{0}&&!g.env.gpsOn&&g.ask({40})==Bytes({21,'g','p','s',':','0'}));
+ assert(g.ask({41,'g','p','s',':','1'})==Bytes{0}&&g.env.gpsOn&&g.ask({40})==Bytes({21,'g','p','s',':','1'}));
+ assert(g.ask({41,'g','p','s',':','x'})==Bytes{0}&&g.env.gpsOn);// not "0": start
+ assert(g.ask({41,'a','b','c',':','1'})==err(6)&&g.ask({41,'g','p','s','s'})==err(6));// other names, no separator
+ g.env.gpsFail=true;assert(g.ask({41,'g','p','s',':','0'})==err(6)&&g.env.gpsOn);// the GPS refused: setSettingValue false
+ printf("custom vars: empty without GPS, gps:1/0 get and set with one, other names ERR_ILLEGAL_ARG, short frame unsupported\n");
 }
 
 void advertPaths(){

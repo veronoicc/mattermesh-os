@@ -58,8 +58,8 @@ static LogFrame *logs=nullptr;
 template<class T> static T *appAlloc(int n){return static_cast<T*>(device::psramCalloc(n,sizeof(T)));}
 static bool queueBuffer(){if(!queue)queue=appAlloc<Queued>(QueueMax);return queue!=nullptr;}
 static bool logBuffer(){if(!logs)logs=appAlloc<LogFrame>(LogMax);return logs!=nullptr;}
-static uint32_t logSeq=0;static bool appSeen=false;
-void logRaw(float snr,float rssi,const uint8_t *raw,int len){if(!appSeen||!logs||len<=0||size_t(len)+3>COMPANION_FRAME_MAX)return;auto &l=logs[logSeq%LogMax];l.b[0]=PUSH_LOG_RX_DATA;l.b[1]=uint8_t(int8_t(snr*4));l.b[2]=uint8_t(int8_t(rssi));memcpy(l.b+3,raw,len);l.len=uint8_t(len+3);logSeq++;}
+static uint32_t logSeq=0,logSkipped=0,logDroppedLong=0;static bool appSeen=false;// skipped: frames a link missed by falling more than LogMax behind; droppedLong: RX frames too long for a frame
+void logRaw(float snr,float rssi,const uint8_t *raw,int len){if(!appSeen||!logs||len<=0)return;if(size_t(len)+3>COMPANION_FRAME_MAX){logDroppedLong++;return;}auto &l=logs[logSeq%LogMax];l.b[0]=PUSH_LOG_RX_DATA;l.b[1]=uint8_t(int8_t(snr*4));l.b[2]=uint8_t(int8_t(rssi));memcpy(l.b+3,raw,len);l.len=uint8_t(len+3);logSeq++;}
 // Zero-hop control data, anonymous requests and every module push (companion_air.h, companion_remote.h,
 // companion_state.h): longer than the 1-byte ones, so they go through the RX log ring, only while an app has connected.
 static void pushFrame(const uint8_t *frame,size_t n){if(!appSeen||!logs||!n||n>COMPANION_FRAME_MAX)return;auto &l=logs[logSeq%LogMax];memcpy(l.b,frame,n);l.len=uint8_t(n);logSeq++;}
@@ -111,6 +111,8 @@ static companion_state::Module &stateModule(){
   h.disableTransports=[](void*){if(hooks.disableTransports)hooks.disableTransports();};h.wipe=[](void*)->bool{return hooks.wipe&&hooks.wipe();};
   h.reboot=[](void*){if(hooks.reboot)hooks.reboot();};h.installIdentity=installIdentity;
   h.runCli=[](void*,const char *command,char *reply,size_t cap)->size_t{return hooks.runCli?hooks.runCli(command,reply,cap):0;};
+  h.gpsAvailable=[](void*){return hooks.gpsAvailable&&hooks.gpsAvailable();};h.gpsEnabled=[](void*){return hooks.gpsEnabled&&hooks.gpsEnabled();};
+  h.setGps=[](void*,bool on){return hooks.setGps&&hooks.setGps(on);};
   Preferences p;uint8_t blob[8];if(p.begin("mmapp",true)){if(p.getBytes("tuning",blob,sizeof(blob))==sizeof(blob))m.tuning.fromBlob(blob,sizeof(blob));p.end();}}
  if(meshPtr)m.self=&meshPtr->self_id;return m;}
 float airtimeFactor(){return stateModule().tuning.airtimeFactor();}
@@ -163,6 +165,8 @@ void remoteCli(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char 
  remoteCliReply(true,true,command,hooks.runCli,reply);}
 }
 void companionHooks(const CompanionHooks &h){companion::hooks=h;}
+size_t companionStatsLine(char *out,size_t cap){using namespace companion;// serial "companion stats"
+ return snprintf(out,cap,"COMPANION_STATS app_seen=%d log_seq=%lu log_skipped=%lu log_dropped_long=%lu push_seq=%lu queue=%d tx_outbound=%d tx_budget_ms=%lu",appSeen,(unsigned long)logSeq,(unsigned long)logSkipped,(unsigned long)logDroppedLong,(unsigned long)pushSeq,queueCount,pool.getOutboundTotal(),meshPtr?chatMesh().getRemainingTxBudget():0UL);}
 void companionFrame(CompanionSession &s,const uint8_t *in,size_t len,CompanionWriter w,void *ctx){
  using namespace companion;if(!len)return;
  if(!meshPtr){err(ERR_BAD_STATE,w,ctx);return;}
@@ -283,7 +287,7 @@ bool companionPump(CompanionSession &s,CompanionWriter w,void *ctx){
  using namespace companion;
  // Pushes first (message waiting, send confirmed), one per call; a link that fell behind skips to the last PushMax.
  if(s.active&&s.pushSeq!=pushSeq){if(pushSeq-s.pushSeq>PushMax)s.pushSeq=pushSeq-PushMax;auto &p=pushes[s.pushSeq%PushMax];s.pushSeq++;if(w)w(ctx,p.b,p.len);return true;}
- if(s.active&&logs&&s.logSeq!=logSeq){if(logSeq-s.logSeq>LogMax)s.logSeq=logSeq-LogMax;auto &l=logs[s.logSeq%LogMax];s.logSeq++;if(w)w(ctx,l.b,l.len);return true;}
+ if(s.active&&logs&&s.logSeq!=logSeq){if(logSeq-s.logSeq>LogMax){logSkipped+=logSeq-s.logSeq-LogMax;s.logSeq=logSeq-LogMax;}auto &l=logs[s.logSeq%LogMax];s.logSeq++;if(w)w(ctx,l.b,l.len);return true;}
  if(!s.listing||!meshPtr)return false;
  ContactInfo c;while(chatMesh().getContactByIdx(uint32_t(s.next),c)){s.next++;if(!s.since||c.lastmod>s.since){Out o;/* contacts loaded from the SD have lastmod 0: a full listing sends them all */contactFrame(o,c);send(o,w,ctx);if(c.lastmod>s.mostRecent)s.mostRecent=c.lastmod;return true;}}
  Out o;o.u8(RESP_END_OF_CONTACTS);o.u32(s.mostRecent);send(o,w,ctx);s.listing=false;return true;
