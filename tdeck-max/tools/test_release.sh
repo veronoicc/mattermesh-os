@@ -9,6 +9,7 @@ for test in services companion_client sd_replace keyboard_layout audio_pcm ringt
   g++ -std=c++17 -O2 -Isrc "sim/test_${test}.cpp" -o "artifacts/release-tests/${test}"
   "artifacts/release-tests/${test}"
 done
+bash tools/test_companion_emulator.sh
 for test in chat_clear heard_journal channel_remap journal_tail; do
   g++ -std=c++17 -O2 -Isim/journal-stubs -Isrc "sim/test_${test}.cpp" src/mesh/journal.cpp -o "artifacts/release-tests/${test}"
   "artifacts/release-tests/${test}"
