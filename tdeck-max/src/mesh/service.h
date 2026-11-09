@@ -28,6 +28,7 @@ struct ContactPage {std::vector<Node> rows;int total=0,live=0;};ContactPage cont
 // Contacts menu. Add new / Replace oldest are the MeshCore app's manual add and overwrite settings. isProtected: contacts
 // Delete oldest and Replace keep (a chat is open with them). contactsDeleteOldest / All return how many went.
 bool contactsAddNew();bool contactsSetAddNew(bool on);bool contactsReplaceOldest();bool contactsSetReplaceOldest(bool on);
+bool remoteCli();bool setRemoteCli(bool on);// Settings > Bluetooth > Remote CLI: contacts flagged for it can run commands here (off by default, remote_cli.h)
 void contactsProtect(bool (*isProtected)(const char *key));int contactsDeletable();int contactsDeleteOldest(int count);int contactsDeleteAll();int liveCount(int filter,uint32_t withinMs);int nearestNodePins(double lat,double lon,NodePin *out,int capacity);/* positioned nodes, nearest first */int liveBestSnr(uint32_t withinMs,float &best);/* nodes heard within withinMs and their best SNR */bool latestLive(int filter,Node &out);// Home widgets: no sort, no allocation
 int nodePins(double south,double west,double north,double east,NodePin *out,int capacity);
 int repeaterPinsForPrefix(const String &prefix,NodePin *out,int capacity,int &matches);int nodePinsForName(const String &name,NodePin *out,int capacity,int &matches);

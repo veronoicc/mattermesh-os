@@ -23,5 +23,11 @@ int main(){
  auto refuse=[&](bool,std::string &reason){calls++;reason="Repeat needs an allowed frequency";return false;};
  mm::repeatToggle(on,refuse,notice);assert(calls==3&&!on&&notice=="Repeat needs an allowed frequency");
  s.radioRepeat=on;s.notice=notice;r.draw(s);assert(ink(canvas,mm::LoRaRepeat)>0&&!s.radioRepeat);
- std::cout<<"PASS: repeat toggle row drawn with ON/OFF and focus, setter called with the opposite state, refusal reason shown and switch stays off\n";
+ // Settings > Bluetooth: the Remote CLI switch sits under the app-over-Wi-Fi row and the USB line, hint wrapped below it, all on the panel.
+ s=mm::State();s.page=mm::Page::Bluetooth;
+ assert(mm::AppCliToggle.y>=mm::AppWifiToggle.y+mm::AppWifiToggle.h+20&&mm::AppCliToggle.x>=mm::Margin&&mm::AppCliToggle.x+mm::AppCliToggle.w<=mm::W-mm::Margin);
+ auto hint=c.lines(mm::AppCliHint,mm::W-2*mm::Margin-2,mm::Font::ChatMeta);assert(std::string(mm::AppCliHint)=="Contacts flagged for remote CLI can run commands"&&hint.size()<=2&&mm::AppCliToggle.y+mm::AppCliToggle.h+6+14*int(hint.size())<=mm::Bottom);
+ r.draw(s);int cliOff=ink(canvas,mm::AppCliToggle),hintOff=ink(canvas,{mm::Margin,mm::AppCliToggle.y+mm::AppCliToggle.h+4,mm::W-2*mm::Margin,14*int(hint.size())+4});assert(cliOff>0&&hintOff>0);
+ s.appRemoteCli=true;r.draw(s);assert(ink(canvas,mm::AppCliToggle)>cliOff);
+ std::cout<<"PASS: repeat toggle row drawn with ON/OFF and focus, setter called with the opposite state, refusal reason shown and switch stays off; Remote CLI row and hint on the Bluetooth page, ON changes the picture\n";
 }

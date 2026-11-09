@@ -829,6 +829,8 @@ void Renderer::section(const State &s){
   valueCard(AppPinCard,"PIN",s.bleEnabled?s.appPin:"-");
   c.toggleRow(AppWifiToggle,Icon::Wifi,"App over Wi-Fi",!s.appWifi?"Off":s.appWifiLinked?"MeshCore app connected":s.appWifiDetail,s.appWifi);
   c.text(Margin+2,AppWifiToggle.y+AppWifiToggle.h+8,s.appUsbLinked?"USB: MeshCore app connected":"USB cable: always available",Font::ChatMeta,FG,W-2*Margin);
+  c.toggleRow(AppCliToggle,Icon::Terminal,"Remote CLI",s.appRemoteCli?"Allowed":"Off",s.appRemoteCli);
+  {auto hint=c.lines(AppCliHint,W-2*Margin-2,Font::ChatMeta);for(size_t i=0;i<hint.size();i++)c.text(Margin+2,AppCliToggle.y+AppCliToggle.h+6+14*int(i),hint[i],Font::ChatMeta,FG,W-2*Margin);}
  }else if(s.page==Page::Audio){
   c.toggleRow(AudioNotify,Icon::Messages,"Notification sound",s.audioReady?"Speaker ready":s.audioMessage,s.audioNotifications);
   c.sectionLabel(SettingsSectionY,"VOLUME",std::to_string(s.audioVolume)+"%");for(auto r:{AudioMinus,AudioPlus}){c.card(r);int cx=r.x+r.w/2,cy=r.y+r.h/2;g.fillRect(cx-6,cy-1,12,2,FG);if(r.x==AudioPlus.x)g.fillRect(cx-1,cy-6,2,12,FG);}c.slider(AudioSlider,s.audioVolume);

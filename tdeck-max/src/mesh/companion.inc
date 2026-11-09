@@ -31,8 +31,9 @@ static void send(const Out &o,CompanionWriter w,void *ctx){if(w)w(ctx,o.b,o.n);}
 static void ok(CompanionWriter w,void *ctx){Out o;o.u8(RESP_OK);send(o,w,ctx);}
 // Preferences MeshCore keeps for the app (CMD_SET_OTHER_PARAMS, CMD_SET_AUTOADD_CONFIG): saved and reported back, so a
 // configuration exported from another companion imports here. Manual add and the overwrite bit of auto add also drive
-// the Contacts menu; the rest (telemetry modes, location in adverts, multi ACKs) are not acted on.
-struct AppPrefs {uint8_t manualAdd=0,telemetry=0,locationPolicy=0,multiAcks=0,autoadd=0,autoaddHops=0;};
+// the Contacts menu; the rest (telemetry modes, location in adverts, multi ACKs) are not acted on. remoteCli is this
+// device's own switch (Settings > Bluetooth); it comes last, so a blob saved before it existed loads as off.
+struct AppPrefs {uint8_t manualAdd=0,telemetry=0,locationPolicy=0,multiAcks=0,autoadd=0,autoaddHops=0,remoteCli=0;};
 static AppPrefs appPrefs;static bool appPrefsLoaded=false;
 static AppPrefs &prefs(){if(!appPrefsLoaded){appPrefsLoaded=true;Preferences p;if(p.begin("mmapp",true)){p.getBytes("prefs",&appPrefs,sizeof(appPrefs));p.end();}}return appPrefs;}
 // Saved first, kept in RAM only when saved: an error answer leaves the reported values as they were.
@@ -155,6 +156,8 @@ static void contactFromFrame(ContactInfo &c,uint32_t &lastmod,const uint8_t *in,
  if(len<i+MAX_PATH_SIZE+32+4)return;memcpy(c.out_path,in+i,MAX_PATH_SIZE);i+=MAX_PATH_SIZE;memcpy(c.name,in+i,32);c.name[31]=0;i+=32;
  memcpy(&c.last_advert_timestamp,in+i,4);i+=4;if(len>=i+8){memcpy(&c.gps_lat,in+i,4);memcpy(&c.gps_lon,in+i+4,4);i+=8;if(len>=i+4)memcpy(&lastmod,in+i,4);}}
 static void contactsChanged(){contactsDirty=true;saveAt=millis();}
+// MyMesh::onCLICommandRecv for a contact: only with the switch on and the contact flagged for remote CLI (remote_cli.h).
+void remoteCli(const ContactInfo &from,const char *command,char *reply){remoteCliReply(prefs().remoteCli,from.isRemoteCLIAllowed(),command,hooks.runCli,reply);}
 }
 void companionHooks(const CompanionHooks &h){companion::hooks=h;}
 void companionFrame(CompanionSession &s,const uint8_t *in,size_t len,CompanionWriter w,void *ctx){
@@ -286,3 +289,5 @@ bool contactsAddNew(){return !(companion::prefs().manualAdd&1);}
 bool contactsSetAddNew(bool on){auto p=companion::prefs();p.manualAdd=on?0:1;return companion::savePrefs(p);}
 bool contactsReplaceOldest(){return companion::prefs().autoadd&1;}// MeshCore AUTO_ADD_OVERWRITE_OLDEST
 bool contactsSetReplaceOldest(bool on){auto p=companion::prefs();p.autoadd=on?(p.autoadd|1):(p.autoadd&~1);return companion::savePrefs(p);}
+bool remoteCli(){return companion::prefs().remoteCli;}
+bool setRemoteCli(bool on){auto p=companion::prefs();p.remoteCli=on;return companion::savePrefs(p);}

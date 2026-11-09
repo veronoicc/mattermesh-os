@@ -12,6 +12,7 @@
 #include "radio_parameters.h"
 #include "companion_settings.h"
 #include "companion_air.h"
+#include "remote_cli.h"
 #include "companion_remote.h"
 #include "companion_packets.h"
 #include "companion_state.h"
@@ -141,6 +142,7 @@ static void txFinished(mesh::Packet *packet,bool success){for(auto &t:outgoing)i
 // Companion app link (companion.inc, end of file): messages for the app's offline queue, ACKs of the app's sends.
 namespace companion {void queueContact(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *text,uint8_t txtType=0,const uint8_t *prefix=nullptr);void queueChannel(int idx,mesh::Packet *pkt,uint32_t ts,const char *text);void ackReceived(const uint8_t *data);void logRaw(float snr,float rssi,const uint8_t *raw,int len);
  void contactResponse(const ContactInfo &from,const uint8_t *data,uint8_t len);void controlData(const mesh::Packet *packet,float snr,float rssi);
+ void remoteCli(const ContactInfo &from,const char *command,char *reply);// the opt-in remote CLI (companion.inc)
  bool pathRecv(const ContactInfo &from,const uint8_t *in,uint8_t inLen,const uint8_t *out,uint8_t outLen,uint8_t type,const uint8_t *extra,uint8_t len);
  void traceRecv(const mesh::Packet *packet,uint32_t tag,uint32_t auth,uint8_t flags,const uint8_t *snrs,const uint8_t *hashes,uint8_t len);
  void rawData(const mesh::Packet *packet,float snr,float rssi);void channelData(int meshIdx,const mesh::GroupChannel &ch,mesh::Packet *packet,uint16_t type,const uint8_t *data,size_t len);
@@ -156,7 +158,7 @@ class ChatMesh:public BaseChatMesh {
  bool repeatedDm(const ContactInfo &from,uint32_t ts,const char *text){uint32_t h=2166136261u;for(const char *c=text;*c;c++)h=(h^uint8_t(*c))*16777619u;
   for(auto &d:seenDms)if(d.ts==ts&&d.text==h&&!memcmp(d.sender,from.id.pub_key,4)&&millis()-d.at<600000)return true;
   auto &d=seenDms[nextSeenDm++%8];memcpy(d.sender,from.id.pub_key,4);d.ts=ts;d.text=h;d.at=millis();return false;}
- void deliver(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *text,const uint8_t *prefix=nullptr){if(!fresh(pkt)||repeatedDm(from,ts,text))return;companion::queueContact(from,pkt,ts,text,prefix?2:0,prefix);Received m;m.direct=true;m.key=hex(from.id.pub_key,32);m.sender=safe(from.name,31);m.body=safe(text);m.timestamp=ts;m.hops=pkt->isRouteFlood()?pkt->getPathHashCount():-1;m.scope=packetScope(pkt);m.path=receivedPath(pkt);receivedCallback(m);}
+ void deliver(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *text,const uint8_t *prefix=nullptr,bool show=true){if(!fresh(pkt)||repeatedDm(from,ts,text))return;companion::queueContact(from,pkt,ts,text,prefix?2:0,prefix);if(!show)return;Received m;m.direct=true;m.key=hex(from.id.pub_key,32);m.sender=safe(from.name,31);m.body=safe(text);m.timestamp=ts;m.hops=pkt->isRouteFlood()?pkt->getPathHashCount():-1;m.scope=packetScope(pkt);m.path=receivedPath(pkt);receivedCallback(m);}
  // The device's own region and the app's scope (override, default, unscoped) meet here: the app's choice wins.
  void flood(mesh::Packet *pkt,uint32_t delay){TransportKey device,key;const bool region=currentScope.length()&&currentScope!="*";if(region){String tag="#"+currentScope;SHA256 sha;sha.update(tag.c_str(),tag.length());sha.finalize(device.key,sizeof(device.key));}
   if(companion::scopeKey(key,region?&device:nullptr)){uint16_t codes[]={key.calcTransportCode(pkt),0};sendMatterFlood(*this,pkt,delay,codes);}else sendMatterFlood(*this,pkt,delay);}
@@ -182,9 +184,9 @@ protected:
  void onContactOverwrite(const uint8_t *pub)override{companion::contactDeleted(pub);}
  void onContactPathUpdated(const ContactInfo &c)override{dmRouteApply(const_cast<ContactInfo&>(c));/* a manual path stays */companion::pathUpdated(c);contactsDirty=true;saveAt=millis();}
  ContactInfo *processAck(const uint8_t *data)override{companion::ackReceived(data);uint32_t ack;memcpy(&ack,data,4);if(pending.active&&(pending.ack==ack||(pending.firstAck&&pending.firstAck==ack))){auto contact=lookupContactByPubKey(pending.key,32);Delivery d;d.token=pending.token;d.state=pending.route+": delivered";deliveredCallback(d);pending.active=false;return contact;}return checkConnectionsAck(data);}
- void onMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *t)override{markConnectionActive(c);if(c.type==ADV_TYPE_REPEATER)return;deliver(c,p,ts,t);}// repeater CLI replies are not chat messages
+ void onMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *t)override{markConnectionActive(c);deliver(c,p,ts,t,nullptr,c.type!=ADV_TYPE_REPEATER);}// a repeater's plain message is the app's only (its CLI replies come through onCommandDataRecv)
  void onCommandDataRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *text)override{markConnectionActive(c);companion::queueContact(c,p,ts,text,1);}// CLI reply of a server: the app's queue only
- void onCLICommandRecv(const ContactInfo&,mesh::Packet*,uint32_t,const char*,char *reply)override{reply[0]=0;} // Companion does not expose a remote CLI.
+ void onCLICommandRecv(const ContactInfo &c,mesh::Packet*,uint32_t,const char *command,char *reply)override{markConnectionActive(c);companion::remoteCli(c,command,reply);}// opt-in, see remote_cli.h
  void onSignedMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const uint8_t *prefix,const char *t)override{markConnectionActive(c);contactsDirty=true;saveAt=millis();deliver(c,p,ts,t,prefix);}// room post: the app's queue as txt_type 2 and the chat, once
  void onChannelMessageRecv(const mesh::GroupChannel &ch,mesh::Packet *p,uint32_t ts,const char *t)override{
   if(!fresh(p))return;int idx=activeChannelIdx(ch);ChannelDetails detail;if(idx<0||!getChannel(idx,detail)||!detail.name[0])return;
@@ -220,11 +222,11 @@ public:
    for(int k=0;k<31&&c.name[k];k++){char ch=c.name[k];row[n++]=(ch=='\t'||ch=='\r'||ch=='\n')?' ':ch;}row[n++]='\t';
    n+=snprintf(row+n,rowSize-n,"%u\t%u\t",unsigned(c.type),unsigned(c.out_path_len));
    if(c.out_path_len!=OUT_PATH_UNKNOWN){size_t len=(c.out_path_len&63)*((c.out_path_len>>6)+1);for(size_t k=0;k<len&&k<sizeof(c.out_path);k++){row[n++]=mm::hexDigit(c.out_path[k]>>4);row[n++]=mm::hexDigit(c.out_path[k]);}}
-   n+=snprintf(row+n,rowSize-n,"\t%lu\t%ld\t%ld\n",(unsigned long)c.last_advert_timestamp,(long)c.gps_lat,(long)c.gps_lon);
+   n+=snprintf(row+n,rowSize-n,"\t%lu\t%ld\t%ld\t%u\n",(unsigned long)c.last_advert_timestamp,(long)c.gps_lat,(long)c.gps_lon,unsigned(c.flags));
    if(used+n>blockSize)flush();memcpy(block+used,row,n);used+=n;}
   flush();f.flush();f.close();if(!ok){storage->remove("/mattermesh/contacts.tmp");return false;}
   return device::sdReplace(*storage,"/mattermesh/contacts.tmp","/mattermesh/contacts.tsv","/mattermesh/contacts.bak");}
- void loadContacts(){File f=storage->open(device::sdSavedPath(*storage,"/mattermesh/contacts.tsv","/mattermesh/contacts.bak"));if(!f)return;while(f.available()){String row=f.readStringUntil('\n');row.trim();ContactInfo c={};if(!unhex(field(row,0),c.id.pub_key,32))continue;String name=field(row,1);name.toCharArray(c.name,sizeof(c.name));c.type=field(row,2).toInt();c.out_path_len=field(row,3).toInt();if(c.out_path_len!=OUT_PATH_UNKNOWN&&(!mesh::Packet::isValidPathLen(c.out_path_len)||!unhex(field(row,4),c.out_path,(c.out_path_len&63)*((c.out_path_len>>6)+1))))continue;c.last_advert_timestamp=field(row,5).toInt();c.gps_lat=field(row,6).toInt();c.gps_lon=field(row,7).toInt();c.shared_secret_valid=false;if(addContact(c)){CachedNode n;n.book=true;n.advertAt=c.last_advert_timestamp;hex(c.id.pub_key,32).toCharArray(n.key,sizeof(n.key));String(c.name).toCharArray(n.name,sizeof(n.name));n.type=c.type;n.lat=c.gps_lat;n.lon=c.gps_lon;cacheNode(n);}}f.close();}
+ void loadContacts(){File f=storage->open(device::sdSavedPath(*storage,"/mattermesh/contacts.tsv","/mattermesh/contacts.bak"));if(!f)return;while(f.available()){String row=f.readStringUntil('\n');row.trim();ContactInfo c={};if(!unhex(field(row,0),c.id.pub_key,32))continue;String name=field(row,1);name.toCharArray(c.name,sizeof(c.name));c.type=field(row,2).toInt();c.out_path_len=field(row,3).toInt();if(c.out_path_len!=OUT_PATH_UNKNOWN&&(!mesh::Packet::isValidPathLen(c.out_path_len)||!unhex(field(row,4),c.out_path,(c.out_path_len&63)*((c.out_path_len>>6)+1))))continue;c.last_advert_timestamp=field(row,5).toInt();c.gps_lat=field(row,6).toInt();c.gps_lon=field(row,7).toInt();c.flags=field(row,8).toInt();/* the app's flags (favourite, remote CLI ...); rows saved before they were kept have none */c.shared_secret_valid=false;if(addContact(c)){CachedNode n;n.book=true;n.advertAt=c.last_advert_timestamp;hex(c.id.pub_key,32).toCharArray(n.key,sizeof(n.key));String(c.name).toCharArray(n.name,sizeof(n.name));n.type=c.type;n.lat=c.gps_lat;n.lon=c.gps_lon;cacheNode(n);}}f.close();}
 };
 static ChatMesh *meshPtr=nullptr;
 static ChatMesh &chatMesh(){return *meshPtr;}

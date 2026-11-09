@@ -66,6 +66,7 @@ void appLinkBegin(){
  device::bleCompanionConfig(matter::snapshot().config.name,appPinValue);// before connectivityBegin(): the BLE name comes from the node name
 }
 void appWifiToggle(){appWifiEnabled=!appWifiEnabled;device::prefPutInt("mmble","tcp",appWifiEnabled?1:0);if(!appWifiEnabled&&appServerOn){if(appClient)appClient.stop();appServer.end();appServerOn=false;}}
+void appCliToggle(){if(!matter::setRemoteCli(!matter::remoteCli()))notice="Cannot save setting";}// Settings > Bluetooth > Remote CLI
 // USB: called by the serial reader for the bytes after a '<' at the start of a line.
 static uint8_t appUsbBuf[matter::COMPANION_FRAME_MAX];static int appUsbState=0;static uint16_t appUsbLen=0,appUsbGot=0;
 bool appUsbByte(uint8_t c){// true while a binary frame is being assembled (the byte is consumed)
@@ -110,6 +111,6 @@ void appLinkLoop(){
 }
 void appLinkFill(mm::State &v){
  v.appBleName=device::bleCompanionName().c_str();v.appBleEditing=bleNameEditing;v.appBleInput=bleNameInput.c_str();v.appPin=std::to_string(appPinValue);v.appWifi=appWifiEnabled;v.appBleLinked=device::bleCompanionConnected();
- v.appUsbLinked=appUsbLinked();v.appWifiLinked=appClient&&appClient.connected();
+ v.appUsbLinked=appUsbLinked();v.appWifiLinked=appClient&&appClient.connected();v.appRemoteCli=matter::remoteCli();
  v.appWifiDetail=device::wifiConnected()?std::string(WiFi.localIP().toString().c_str())+":5000":"Waiting for Wi-Fi";
 }

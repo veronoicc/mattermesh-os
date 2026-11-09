@@ -129,6 +129,8 @@ constexpr Rect WifiPassword={Margin,Top+82,W-2*Margin,32},WifiConnect={Margin,To
 constexpr Rect BleToggle=SettingsSwitch;
 // Bluetooth page: MeshCore app name / PIN cards, then the app-over-Wi-Fi switch.
 constexpr Rect AppNameCard={Margin,SettingsBodyY,(W-2*Margin-6)*7/10,40},AppPinCard={Margin+(W-2*Margin-6)*7/10+6,SettingsBodyY,(W-2*Margin-6)-(W-2*Margin-6)*7/10,40},AppWifiToggle={Margin,SettingsBodyY+46,W-2*Margin,40};
+// Remote CLI switch below the USB line (SettingsBodyY+94), its hint wrapped under the row.
+constexpr Rect AppCliToggle={Margin,SettingsBodyY+112,W-2*Margin,40};constexpr const char *AppCliHint="Contacts flagged for remote CLI can run commands";
 constexpr int WeatherPlaceY=Top+3,WeatherHeroY=Top+22,WeatherIconX=Margin+4,WeatherTempX=86,WeatherHoursY=Top+90,WeatherHoursH=60,WeatherHoursColumns=4,WeatherGridY=Top+154,WeatherCellH=28,WeatherStatusY=Bottom-44;
 constexpr Rect WeatherRefresh={Margin,Bottom-30,W-2*Margin,30},WeatherPrompt={Margin,WeatherHoursY,W-2*Margin,120},WeatherWifiButton={Margin+20,WeatherHoursY+76,W-2*Margin-40,34};
 inline Rect weatherCell(int i){return {Margin+(i%2)*((W-2*Margin)/2+3),WeatherGridY+(i/2)*(WeatherCellH+4),(W-2*Margin)/2-3,WeatherCellH};}

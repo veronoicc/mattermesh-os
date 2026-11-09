@@ -1312,6 +1312,7 @@ void key(char c) {
   if(section==14&&c=='n'){startBleNameEdit();return;}
   if(section==14&&(c=='\n'||c==' ')){device::bleEnabled(!device::connectivityStatus().ble);render();return;}
   if(section==14&&(c=='t'||c=='s'||c=='j')){appWifiToggle();render();return;}// the app-over-Wi-Fi switch
+  if(section==14&&c=='c'){appCliToggle();render();return;}// the remote CLI switch
   if(section==10&&(c=='r'||c=='\n'||c=='w')){auto phase=device::weatherState().phase;if(phase==device::WeatherPhase::WifiOff)device::weatherEnableWifi();else if(phase==device::WeatherPhase::NoNetwork){openSection(4);return;}else if(c!='w')device::weatherRefresh();render();return;}
   if(section==1){if(contactDialog){if(c=='j'||c=='k')contactDialogStep(c=='j'?1:-1);else if(c=='\n'&&contactButton==1)contactDeleteConfirm();else if(c=='\n'&&contactButton==2)contactDialogClose();return;}
    if(contactMenu){if(c=='j'||c=='k'){contactMenuFocus=(contactMenuFocus+(c=='j'?1:mm::ContactMenuRows-1))%mm::ContactMenuRows;render();}else if(c=='\n')contactMenuChoose(contactMenuFocus);return;}
@@ -1485,6 +1486,7 @@ void tap(int x,int y) {
   if(section==14&&mm::AppNameCard.contains(x,y)){if(bleNameEditing)saveBleName();else startBleNameEdit();return;}
   if(section==14&&mm::BleToggle.contains(x,y)){device::bleEnabled(!device::connectivityStatus().ble);render();return;}
   if(section==14&&mm::AppWifiToggle.contains(x,y)){appWifiToggle();render();return;}
+  if(section==14&&mm::AppCliToggle.contains(x,y)){appCliToggle();render();return;}
   if(section==10){auto phase=device::weatherState().phase;bool offline=phase==device::WeatherPhase::WifiOff||phase==device::WeatherPhase::NoNetwork;if(offline&&mm::WeatherWifiButton.contains(x,y)){if(phase==device::WeatherPhase::WifiOff){device::weatherEnableWifi();render();}else openSection(4);return;}if(!offline&&mm::WeatherRefresh.contains(x,y)){device::weatherRefresh();render();return;}}
   if(section==19){for(int i=0;i<mm::SettingsCount;i++){if(mm::settingsVisible(i,settingsScroll)&&mm::settingsRect(i,settingsScroll).contains(x,y)){settingsFocus=i;openSection(mm::SettingsItems[i].section);return;}}}
   if(section==2){
@@ -1942,8 +1944,9 @@ void handle(const String &s) {
  if(s=="wifi status"){auto w=device::connectivityStatus();Serial.printf("WIFI_STATUS on=%d connected=%d connecting=%d scanning=%d saved=%d networks=%u paused=%d\n",w.wifi,w.connected,w.connecting,w.scanning,w.remembered,unsigned(w.networkCount),w.reconnectPaused);return;}
  if(s=="wifi link"){auto w=device::connectivityStatus();StaticJsonDocument<256> json;json["connected"]=w.connected;json["ssid"]=w.connected?w.ssid:String("");json["address"]=w.address;json["rssi"]=w.rssi;json["message"]=w.message;Serial.print("WIFI_LINK ");serializeJson(json,Serial);Serial.println();return;}
  if(s.startsWith("ble name ")){String n=s.substring(9);if(n=="-")n="";bool saved=appSetBleName(n);Serial.printf("BLE_NAME saved=%d name=%s\n",saved,device::bleCompanionName().c_str());return;}// "-" = back to the node name
- if(s=="app status"){Serial.printf("APP_STATUS ble=%d ble_name=%s pin=%lu usb=%d wifi_enabled=%d wifi_server=%d wifi_client=%d\n",device::bleCompanionConnected(),device::bleCompanionName().c_str(),(unsigned long)appPinValue,appUsbLinked(),appWifiEnabled,appServerOn,appClient&&appClient.connected());return;}
+ if(s=="app status"){Serial.printf("APP_STATUS ble=%d ble_name=%s pin=%lu usb=%d wifi_enabled=%d wifi_server=%d wifi_client=%d remote_cli=%d\n",device::bleCompanionConnected(),device::bleCompanionName().c_str(),(unsigned long)appPinValue,appUsbLinked(),appWifiEnabled,appServerOn,appClient&&appClient.connected(),matter::remoteCli());return;}
  if(s=="app wifi"){appWifiToggle();Serial.printf("APP_WIFI %d\n",appWifiEnabled);return;}
+ if(s=="remote cli"){appCliToggle();Serial.printf("REMOTE_CLI %d\n",matter::remoteCli());return;}
  if(s=="wifi editor status"){Serial.printf("WIFI_EDITOR editing=%d hidden=%d visible=%d field=%d ssid_bytes=%u password_bytes=%u\n",wifiEditing,wifiHidden,wifiShowPassword,wifiEditField,wifiTarget.length(),wifiPassword.length());return;}
  if(s=="map status"){auto t=device::mapTilesState();Serial.printf("MAP_STATUS zoom=%d lat=%.5f lon=%.5f follow=%d visible=%d missing=%d sd=%d online=%d queued=%d downloaded=%lu stored=%lu failed=%lu\n",mapView.zoom,mapView.lat,mapView.lon,mapView.follow,mapVisibleCount,mapMissingCount,t.sd,t.online,t.queued,t.downloaded,t.stored,t.failed);return;}
  if(s.startsWith("map zoom ")){mapZoomLimit=0;mapView.zoom=constrain(int(s.substring(9).toInt()),device::MapMinZoom,device::MapMaxZoom);device::mapTilesForget();render();return;}
