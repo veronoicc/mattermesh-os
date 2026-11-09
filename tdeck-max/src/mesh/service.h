@@ -92,6 +92,7 @@ struct CompanionHooks {uint16_t (*batteryMv)()=nullptr;uint32_t (*storageUsedKb)
  bool (*gpsAvailable)()=nullptr;bool (*gpsEnabled)()=nullptr;bool (*setGps)(bool on)=nullptr;};
 void companionHooks(const CompanionHooks &hooks);
 size_t companionStatsLine(char *out,size_t cap);// "COMPANION_STATS ..." debug line (serial "companion stats")
+void companionAirTrace(bool on);// serial "companion trace on|off": one AIR_TX / AIR_RX line per radio packet
 void companionFrame(CompanionSession &session,const uint8_t *frame,size_t len,CompanionWriter write,void *ctx);
 bool companionPump(CompanionSession &session,CompanionWriter write,void *ctx);
 }

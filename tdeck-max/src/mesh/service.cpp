@@ -99,6 +99,8 @@ static EchoTrack echoes[16];static unsigned nextEcho=0;
 static String receivedPath(const mesh::Packet *p){if(!p->isRouteFlood())return "direct";String out="flood:";for(unsigned i=0;i<p->getPathHashCount();i++){if(i)out+=",";out+=hex(p->path+i*p->getPathHashSize(),p->getPathHashSize());}return out;}
 // The last advert sent: its copies heard back name the repeaters that took it.
 static struct {bool active=false;uint32_t at=0,revision=0;uint8_t hash[MAX_HASH_SIZE]={};RepeaterObserver repeaters;} advertEcho;
+static bool airTraceOn=false;void companionAirTrace(bool on){airTraceOn=on;}
+static uint32_t airHash(mesh::Packet *p){uint8_t h[MAX_HASH_SIZE];p->calculatePacketHash(h);uint32_t v;memcpy(&v,h,4);return v;}// first 4 bytes: a repeater's echo of our flood shows the same value on TX and RX
 static void observeEcho(mesh::Packet *p){if(!p->isRouteFlood())return;uint8_t hash[MAX_HASH_SIZE];p->calculatePacketHash(hash);if(advertEcho.active&&!memcmp(hash,advertEcho.hash,MAX_HASH_SIZE)&&advertEcho.repeaters.observe(p->path,p->getPathHashCount(),p->getPathHashSize()))advertEcho.revision++;for(auto &e:echoes)if(e.active&&millis()-e.seenAt<600000&&!memcmp(hash,e.hash,MAX_HASH_SIZE)){if(e.repeaters.observe(p->path,p->getPathHashCount(),p->getPathHashSize())){Delivery d;d.token=e.token;d.repeaters=e.repeaters.count;if(p->getPathHashCount())d.firstRepeater=hex(p->path,p->getPathHashSize());for(int i=0;i<e.repeaters.count;i++){if(i)d.heard+=",";d.heard+=hex(e.repeaters.hashes[i],e.repeaters.sizes[i]);}deliveredCallback(d);}break;}}
 
 // Companion link: the companion builds and sends the packet, so its hash is unknown here. The first copy it hears
@@ -166,9 +168,9 @@ protected:
  int searchChannelsByHash(const uint8_t *hash,mesh::GroupChannel dest[],int maxMatches)override{int n=0;for(int i=0;i<CHAT_SLOTS&&n<maxMatches;i++){ChannelDetails detail;if(getChannel(i,detail)&&detail.name[0]&&detail.channel.hash[0]==hash[0])dest[n++]=detail.channel;}return n;}
  void onPeerDataRecv(mesh::Packet *packet,uint8_t type,int sender,const uint8_t *secret,uint8_t *data,size_t len)override{String old=currentScope;currentScope=packetScope(packet);if(currentScope=="unknown")currentScope="*";BaseChatMesh::onPeerDataRecv(packet,type,sender,secret,data,len);currentScope=old;}
  void logRxRaw(float snr,float rssi,const uint8_t raw[],int len)override{companion::logRaw(snr,rssi,raw,len);}
- void logRx(mesh::Packet *packet,int len,float)override{state.rssi=driver.getLastRSSI();state.snr=driver.getLastSNR();observeEcho(packet);recordRx(packet,len);}
+ void logRx(mesh::Packet *packet,int len,float)override{state.rssi=driver.getLastRSSI();state.snr=driver.getLastSNR();if(airTraceOn)Serial.printf("AIR_RX hdr=%02x len=%d path=%d snr=%.1f rssi=%.0f hash=%08x\n",packet->header,len,int(packet->getPathHashCount()),state.snr,state.rssi,(unsigned)airHash(packet));observeEcho(packet);recordRx(packet,len);}
  void recordRx(mesh::Packet *packet,int len);
- void logTx(mesh::Packet *packet,int)override{txFinished(packet,true);}
+ void logTx(mesh::Packet *packet,int len)override{if(airTraceOn)Serial.printf("AIR_TX hdr=%02x len=%d path=%d hash=%08x\n",packet->header,len,int(packet->getPathHashCount()),(unsigned)airHash(packet));txFinished(packet,true);}
  void logTxFail(mesh::Packet *packet,int)override{txFinished(packet,false);}
  bool allowPacketForward(const mesh::Packet*)override{return repeat_policy::mayForward(state.config.repeat,pool.getOutboundTotal(),getRemainingTxBudget());} // Client repeat mode only: forwarding leaves queue and airtime for own messages.
  float getAirtimeBudgetFactor()const override{return companion::airtimeFactor();} // TX airtime budget: 9.0 until the app sets its own (CMD_SET_TUNING_PARAMS), conservative queue pacing.
