@@ -82,7 +82,11 @@ struct CompanionHooks {uint16_t (*batteryMv)()=nullptr;uint32_t (*storageUsedKb)
  uint32_t (*pin)()=nullptr;bool (*setPin)(uint32_t)=nullptr;void (*location)(int32_t &lat,int32_t &lon)=nullptr;
  bool (*setLocation)(int32_t lat,int32_t lon)=nullptr;// CMD_SET_ADVERT_LATLON (1e-6 degrees): the manual position
  // App channel edit (CMD_SET_CHANNEL): 0 = saved, otherwise a companion error code.
- uint8_t (*setChannel)(uint8_t idx,const char *name,const uint8_t secret[16])=nullptr;};
+ uint8_t (*setChannel)(uint8_t idx,const char *name,const uint8_t secret[16])=nullptr;
+ // CMD_FACTORY_RESET: stop every app transport, then wipe (false = could not); the reboot comes from `reboot`.
+ void (*disableTransports)()=nullptr;bool (*wipe)()=nullptr;
+ // CMD_RUN_CLI_COMMAND: runs one CLI line, writes the NUL terminated reply (at most cap bytes) and returns its length; 0 = unknown command.
+ size_t (*runCli)(const char *command,char *reply,size_t cap)=nullptr;};
 void companionHooks(const CompanionHooks &hooks);
 void companionFrame(CompanionSession &session,const uint8_t *frame,size_t len,CompanionWriter write,void *ctx);
 bool companionPump(CompanionSession &session,CompanionWriter write,void *ctx);

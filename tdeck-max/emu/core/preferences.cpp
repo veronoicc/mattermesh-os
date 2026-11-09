@@ -285,3 +285,8 @@ bool emuNvsHasEntries() {
       return true;
   return false;
 }
+// nvs_flash.h stub (emu/include/nvs_flash.h): the app's factory reset erases every namespace.
+int emuNvsErase() {
+  std::lock_guard<std::mutex> g(nvsMutex);
+  return save(Store()) ? 0 : -1;
+}

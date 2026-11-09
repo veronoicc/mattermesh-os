@@ -4,33 +4,14 @@
 // (sim/companion_packets_emulator.cpp) runs this same code against real MeshCore nodes. Every command function takes
 // the whole app frame {opcode}{args} and writes the reply frame into `out` (at least 1+64 bytes), returning its length.
 //
-// Wiring (companion.inc / service.cpp):
-//  state the firmware keeps:  cp::Signer signer;  cp::ScopeState scope;  (both one instance per companion link)
-//  case 33 CMD_SIGN_START:               n=companion_packets::signStart(signer,out);
-//  case 34 CMD_SIGN_DATA:                n=companion_packets::signData(signer,in,len,out);
-//  case 35 CMD_SIGN_FINISH:              n=companion_packets::signFinish(signer,selfId,out);   // selfId = the node's mesh::LocalIdentity
-//  case 25 CMD_SEND_RAW_DATA:            n=companion_packets::sendRawData(mesh,in,len,out);
-//  case 65 CMD_SEND_RAW_PACKET:          n=companion_packets::sendRawPacket(mesh,in,len,out);
-//  case 62 CMD_SEND_CHANNEL_DATA:        n=companion_packets::sendChannelData(mesh,in,len,out);  // mesh needs getChannel(int,ChannelDetails&)
-//  case 54 CMD_SET_FLOOD_SCOPE_KEY:      n=scope.setKey(in,len,out);
-//  case 63 CMD_SET_DEFAULT_FLOOD_SCOPE:  n=scope.setDefault(in,len,out);  if(scope.dirty){save scope.serialize(blob) to Preferences; scope.dirty=false;}
-//  case 64 CMD_GET_DEFAULT_FLOOD_SCOPE:  n=scope.getDefault(out);
-//  (all these opcodes are advertised by the firmware; frames MyMesh does not recognise, e.g. a bare SIGN_DATA, answer ERR_UNSUPPORTED here.)
-//  MeshCore callbacks (ChatMesh overrides, both protected virtuals):
-//   onRawDataRecv(mesh::Packet *p)     -> n=companion_packets::rawDataFrame(_radio->getLastSNR(),_radio->getLastRSSI(),p,f,cap);
-//                                         if(n)write f[0..n) to the app right now (a push, only while an app is connected); cap = size of the app out frame (MyMesh: 177).
-//   onChannelDataRecv(const mesh::GroupChannel &c,mesh::Packet *p,uint16_t type,const uint8_t *d,size_t len)
-//                                      -> n=companion_packets::channelDataFrame(*this,c,p,type,d,len,f,cap);
-//                                         if(n) append f[0..n) to the offline message queue (the same one as RESP_CODE_CHANNEL_MSG_RECV) and push 0x83 MSG_WAITING.
-//                                         The frame is queued like channel messages, so the queue's "is this a message frame" test must also accept opcode 27.
-//   sendFloodScoped(contact|channel,...) -> flood with companion_packets::ScopeState::effective(key,&deviceRegionKey): true = send with transport
-//                                         codes {key.calcTransportCode(pkt),0}, false = plain sendFlood. deviceRegionKey is the key of the device's own
-//                                         region setting (SHA256 of "#"+currentScope as service.cpp's flood() derives it, nullptr when currentScope is "*"
-//                                         or empty). Precedence: app "unscoped" > app override key > app default scope key > device region.
-//  Persistence: scope.serialize(blob[BLOB_SIZE]) after a successful case 63 (scope.dirty) and at least on every change the firmware wants kept;
-//   scope.deserialize(blob,n) once at boot (false = keep the empty state). MyMesh keeps only the default scope across reboots (the override key and
-//   "unscoped" are per-connection); the blob holds all four, so after deserialize() the firmware SHOULD zero scope.overrideKey and clear scope.unscoped
-//   to match.
+// The firmware keeps one Signer and one ScopeState and calls each function from the matching opcode case in
+// companion.inc; frames MyMesh does not recognise (a bare sign data, for one) answer unsupported here. Packets heard
+// reach the app from the ChatMesh callbacks: a raw custom packet becomes a push while an app is connected, a channel
+// datagram joins the offline message queue (so that queue must accept its frame code) with a message-waiting push.
+// Flood sends take the key from ScopeState::effective, with the device's own region key as the last choice:
+// the app's unscoped choice beats its override key, that beats its default scope, that beats the device region.
+// Only the default scope survives a reboot in MeshCore. The blob serialises all four settings, so after loading it
+// the firmware clears the override key and the unscoped flag to match.
 #include <Mesh.h>
 #include <helpers/BaseChatMesh.h>
 #include <stdlib.h>

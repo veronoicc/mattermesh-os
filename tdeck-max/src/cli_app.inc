@@ -14,7 +14,9 @@ constexpr int CLI_OUTPUT_MAX=200,CLI_OUTPUT_KEEP=40;
 static const std::vector<std::string> &cliCommands(){static const std::vector<std::string> words={"help","ver","board","clock","uptime","get name","get radio","get freq","get bw","get sf","get cr","get tx","get public.key","get role","get lat","get lon","set name","set radio","set tx","advert","neighbors","stats-radio","stats-packets","stats-core","gps","gps on","gps off","log start","log stop","clear","reboot"};return words;}
 static std::string cliName(){return matter::snapshot().config.name.c_str();}
 static std::string cliPrompt(){return cliName()+"> ";}
-static void cliPrint(const std::string &line){cliOutput.push_back(line);if(int(cliOutput.size())>CLI_OUTPUT_MAX)cliOutput.erase(cliOutput.begin(),cliOutput.begin()+(cliOutput.size()-CLI_OUTPUT_MAX));cliScrollLines=0;}
+// While the app runs a command (cliRunBuffer) the lines go to its reply instead of the screen.
+static std::string *cliCapture=nullptr;static bool cliUnknown=false;
+static void cliPrint(const std::string &line){if(cliCapture){if(!cliCapture->empty())*cliCapture+='\n';*cliCapture+=line;return;}cliOutput.push_back(line);if(int(cliOutput.size())>CLI_OUTPUT_MAX)cliOutput.erase(cliOutput.begin(),cliOutput.begin()+(cliOutput.size()-CLI_OUTPUT_MAX));cliScrollLines=0;}
 static void cliSync(){cliMirror=cliLine.text.c_str();}
 static void cliOpen(){if(cliOutput.empty()){cliPrint("MatterMesh CLI");cliPrint("Connected to "+cliName());cliPrint("Type 'help' for available commands.");cliPrint("");}cliScrollLines=0;cliSync();}
 static std::string cliDuration(uint32_t seconds){char text[32];if(seconds>=86400)snprintf(text,sizeof(text),"%lud %luh %02lum",(unsigned long)(seconds/86400),(unsigned long)(seconds/3600%24),(unsigned long)(seconds/60%60));else snprintf(text,sizeof(text),"%luh %02lum %02lus",(unsigned long)(seconds/3600),(unsigned long)(seconds/60%60),(unsigned long)(seconds%60));return text;}
@@ -24,8 +26,9 @@ static std::string cliPacketLine(const matter::RxPacket &p){
  std::string path=matter::rxPathSummary(p,1,1);for(size_t at;(at=path.find(" > "))!=std::string::npos;)path.replace(at,3,">");return text+(path.empty()?std::string("direct"):path);
 }
 static bool cliApply(matter::Config config,const char *done){String reason;if(matter::configure(config,reason)){cliPrint(done);return true;}cliPrint(std::string("Error: ")+reason.c_str());return false;}
-static void cliRun(const std::string &command){
- cliPrint(cliPrompt()+command);cliHistory.add(command);auto w=device::cliWords(command);if(w.empty())return;
+// The command itself, shared by the on-screen CLI and the app's CLI command.
+static void cliExec(const std::string &command){
+ auto w=device::cliWords(command);if(w.empty())return;
  auto config=matter::snapshot().config;char text[96];const std::string &verb=w[0];std::string arg=w.size()>1?w[1]:"";
  auto rest=[&](size_t words){size_t at=0;for(size_t i=0;i<words;i++){at=command.find_first_not_of(' ',at);at=command.find(' ',at);if(at==std::string::npos)return std::string();}at=command.find_first_not_of(' ',at);return at==std::string::npos?std::string():command.substr(at);};
  if(verb=="help"){
@@ -74,7 +77,14 @@ static void cliRun(const std::string &command){
  else if(verb=="log"){if(arg=="start"){cliLogging=true;cliLogSeq=matter::rxLog().total();cliPrint("Logging RX packets / STOP or 'log stop' to end");}else if(arg=="stop"){cliLogging=false;cliPrint("Log stopped");}else cliPrint("Usage: log start | log stop");}
  else if(verb=="clear"){cliOutput.clear();}
  else if(verb=="reboot"){cliPrint("Rebooting...");render();delay(300);ESP.restart();}
- else cliPrint("Unknown command: "+verb+" (type 'help')");
+ else{cliUnknown=true;cliPrint("Unknown command: "+verb+" (type 'help')");}
+}
+static void cliRun(const std::string &command){cliPrint(cliPrompt()+command);cliHistory.add(command);cliExec(command);}
+// CMD_RUN_CLI_COMMAND of the companion protocol: the reply text (lines joined by newlines, cut to cap-1 bytes) goes into
+// `reply`; 0 means unknown command, a command with no output answers OK. Nothing reaches the screen.
+static size_t cliRunBuffer(const char *command,char *reply,size_t cap){
+ std::string out;cliCapture=&out;cliUnknown=false;cliExec(command);cliCapture=nullptr;if(cliUnknown||!cap)return 0;
+ if(out.empty())out="OK";size_t n=std::min(out.size(),cap-1);memcpy(reply,out.data(),n);reply[n]=0;return n;
 }
 static void cliComplete(){std::vector<std::string> matches;bool changed=device::cliComplete(cliLine,cliCommands(),matches);if(matches.size()>1){std::string list;for(auto &m:matches)list+=(list.empty()?"":"  ")+m;cliPrint(list);}else if(!changed&&matches.empty())notice="";}
 // Toolbar: 0 TAB, 1 up, 2 down, 3 left, 4 right, 5 PASTE, 6 CLEAR, 7 STOP.

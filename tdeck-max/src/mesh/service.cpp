@@ -12,6 +12,9 @@
 #include "radio_parameters.h"
 #include "companion_settings.h"
 #include "companion_air.h"
+#include "companion_remote.h"
+#include "companion_packets.h"
+#include "companion_state.h"
 #include "repeat_policy.h"
 #include <CayenneLPP.h>
 #include <helpers/SensorManager.h>
@@ -136,7 +139,14 @@ static bool dmQueued(uint32_t token){for(auto &t:outgoing)if(t.token==token&&t.p
 static void txFinished(mesh::Packet *packet,bool success){for(auto &t:outgoing)if(t.packet==packet){Delivery d;d.txComplete=true;d.txSuccess=success;d.token=t.token;d.state=success?(t.direct?(pending.active&&pending.token==t.token?pending.route+": sent, awaiting ACK":String("Sent / awaiting ACK")):"Sent / no group ACK"):"TX failed";deliveredCallback(d);if(t.direct&&pending.active&&pending.token==t.token){pending.transmitted=success;pending.deadline=millis()+pending.timeout;if(!success)pending.active=false;}t.packet=nullptr;break;}}
 
 // Companion app link (companion.inc, end of file): messages for the app's offline queue, ACKs of the app's sends.
-namespace companion {void queueContact(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *text);void queueChannel(int idx,mesh::Packet *pkt,uint32_t ts,const char *text);void ackReceived(const uint8_t *data);void logRaw(float snr,float rssi,const uint8_t *raw,int len);void contactResponse(const uint8_t *data,uint8_t len);void controlData(const mesh::Packet *packet,float snr,float rssi);}
+namespace companion {void queueContact(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *text,uint8_t txtType=0,const uint8_t *prefix=nullptr);void queueChannel(int idx,mesh::Packet *pkt,uint32_t ts,const char *text);void ackReceived(const uint8_t *data);void logRaw(float snr,float rssi,const uint8_t *raw,int len);
+ void contactResponse(const ContactInfo &from,const uint8_t *data,uint8_t len);void controlData(const mesh::Packet *packet,float snr,float rssi);
+ bool pathRecv(const ContactInfo &from,const uint8_t *in,uint8_t inLen,const uint8_t *out,uint8_t outLen,uint8_t type,const uint8_t *extra,uint8_t len);
+ void traceRecv(const mesh::Packet *packet,uint32_t tag,uint32_t auth,uint8_t flags,const uint8_t *snrs,const uint8_t *hashes,uint8_t len);
+ void rawData(const mesh::Packet *packet,float snr,float rssi);void channelData(int meshIdx,const mesh::GroupChannel &ch,mesh::Packet *packet,uint16_t type,const uint8_t *data,size_t len);
+ void discovered(const ContactInfo &c,bool isNew,uint8_t pathLen,const uint8_t *path);void pathUpdated(const ContactInfo &c);void contactDeleted(const uint8_t *pub);void contactsFull();
+ uint8_t contactRequest(const ContactInfo &from,uint32_t ts,const uint8_t *data,uint8_t len,uint8_t *reply);
+ bool scopeKey(TransportKey &out,const TransportKey *deviceRegion);float airtimeFactor();int rxDelay(float score,uint32_t airTime);}
 class ChatMesh:public BaseChatMesh {
  int activeChannelIdx(const mesh::GroupChannel &ch){for(int i=0;i<CHAT_SLOTS;i++){ChannelDetails detail;if(getChannel(i,detail)&&detail.name[0]&&!memcmp(ch.secret,detail.channel.secret,sizeof(ch.secret)))return i;}return -1;}
  uint8_t lastHash[64][MAX_HASH_SIZE]={};unsigned nextHash=0;
@@ -146,8 +156,10 @@ class ChatMesh:public BaseChatMesh {
  bool repeatedDm(const ContactInfo &from,uint32_t ts,const char *text){uint32_t h=2166136261u;for(const char *c=text;*c;c++)h=(h^uint8_t(*c))*16777619u;
   for(auto &d:seenDms)if(d.ts==ts&&d.text==h&&!memcmp(d.sender,from.id.pub_key,4)&&millis()-d.at<600000)return true;
   auto &d=seenDms[nextSeenDm++%8];memcpy(d.sender,from.id.pub_key,4);d.ts=ts;d.text=h;d.at=millis();return false;}
- void deliver(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *text){if(!fresh(pkt)||repeatedDm(from,ts,text))return;companion::queueContact(from,pkt,ts,text);Received m;m.direct=true;m.key=hex(from.id.pub_key,32);m.sender=safe(from.name,31);m.body=safe(text);m.timestamp=ts;m.hops=pkt->isRouteFlood()?pkt->getPathHashCount():-1;m.scope=packetScope(pkt);m.path=receivedPath(pkt);receivedCallback(m);}
- void flood(mesh::Packet *pkt,uint32_t delay){if(currentScope.length()&&currentScope!="*"){TransportKey k;String tag="#"+currentScope;SHA256 sha;sha.update(tag.c_str(),tag.length());sha.finalize(k.key,sizeof(k.key));uint16_t codes[]={k.calcTransportCode(pkt),0};sendMatterFlood(*this,pkt,delay,codes);}else sendMatterFlood(*this,pkt,delay);}
+ void deliver(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *text,const uint8_t *prefix=nullptr){if(!fresh(pkt)||repeatedDm(from,ts,text))return;companion::queueContact(from,pkt,ts,text,prefix?2:0,prefix);Received m;m.direct=true;m.key=hex(from.id.pub_key,32);m.sender=safe(from.name,31);m.body=safe(text);m.timestamp=ts;m.hops=pkt->isRouteFlood()?pkt->getPathHashCount():-1;m.scope=packetScope(pkt);m.path=receivedPath(pkt);receivedCallback(m);}
+ // The device's own region and the app's scope (override, default, unscoped) meet here: the app's choice wins.
+ void flood(mesh::Packet *pkt,uint32_t delay){TransportKey device,key;const bool region=currentScope.length()&&currentScope!="*";if(region){String tag="#"+currentScope;SHA256 sha;sha.update(tag.c_str(),tag.length());sha.finalize(device.key,sizeof(device.key));}
+  if(companion::scopeKey(key,region?&device:nullptr)){uint16_t codes[]={key.calcTransportCode(pkt),0};sendMatterFlood(*this,pkt,delay,codes);}else sendMatterFlood(*this,pkt,delay);}
 protected:
  int searchChannelsByHash(const uint8_t *hash,mesh::GroupChannel dest[],int maxMatches)override{int n=0;for(int i=0;i<CHAT_SLOTS&&n<maxMatches;i++){ChannelDetails detail;if(getChannel(i,detail)&&detail.name[0]&&detail.channel.hash[0]==hash[0])dest[n++]=detail.channel;}return n;}
  void onPeerDataRecv(mesh::Packet *packet,uint8_t type,int sender,const uint8_t *secret,uint8_t *data,size_t len)override{String old=currentScope;currentScope=packetScope(packet);if(currentScope=="unknown")currentScope="*";BaseChatMesh::onPeerDataRecv(packet,type,sender,secret,data,len);currentScope=old;}
@@ -157,22 +169,23 @@ protected:
  void logTx(mesh::Packet *packet,int)override{txFinished(packet,true);}
  void logTxFail(mesh::Packet *packet,int)override{txFinished(packet,false);}
  bool allowPacketForward(const mesh::Packet*)override{return repeat_policy::mayForward(state.config.repeat,pool.getOutboundTotal(),getRemainingTxBudget());} // Client repeat mode only: forwarding leaves queue and airtime for own messages.
- float getAirtimeBudgetFactor()const override{return 9.0f;} // TX <=10% airtime, conservative queue pacing.
- int calcRxDelay(float,uint32_t)const override{return 0;}
+ float getAirtimeBudgetFactor()const override{return companion::airtimeFactor();} // TX airtime budget: 9.0 until the app sets its own (CMD_SET_TUNING_PARAMS), conservative queue pacing.
+ int calcRxDelay(float score,uint32_t airTime)const override{return companion::rxDelay(score,airTime);}
  void sendFloodScoped(const ContactInfo&,mesh::Packet *pkt,uint32_t delay=0)override{flood(pkt,delay);}
  void sendFloodScoped(const mesh::GroupChannel &ch,mesh::Packet *pkt,uint32_t delay=0)override{int idx=activeChannelIdx(ch);String old=currentScope;if(!explicitGroupScope)currentScope=idx>=0?channelScopes[idx]:"*";flood(pkt,delay);currentScope=old;}
  void onAdvertRecv(mesh::Packet *packet,const mesh::Identity &id,uint32_t timestamp,const uint8_t *data,size_t length)override{BaseChatMesh::onAdvertRecv(packet,id,timestamp,data,length);contactImporting=false;}
- void onDiscoveredContact(ContactInfo &c,bool,uint8_t pathLen,const uint8_t*)override{
-  String key=hex(c.id.pub_key,32);CachedNode n;key.toCharArray(n.key,sizeof(n.key));safe(c.name,31).toCharArray(n.name,sizeof(n.name));n.type=c.type;n.seen=millis();n.hops=pathLen&63;n.rssi=driver.getLastRSSI();n.snr=driver.getLastSNR();n.live=true;n.verified=true;n.lat=c.gps_lat;n.lon=c.gps_lon;n.advertAt=c.last_advert_timestamp;if(cacheNode(n)){contactsDirty=true;saveAt=millis();}
+ void onDiscoveredContact(ContactInfo &c,bool isNew,uint8_t pathLen,const uint8_t *path)override{
+  companion::discovered(c,isNew,pathLen,path);String key=hex(c.id.pub_key,32);CachedNode n;key.toCharArray(n.key,sizeof(n.key));safe(c.name,31).toCharArray(n.name,sizeof(n.name));n.type=c.type;n.seen=millis();n.hops=pathLen&63;n.rssi=driver.getLastRSSI();n.snr=driver.getLastSNR();n.live=true;n.verified=true;n.lat=c.gps_lat;n.lon=c.gps_lon;n.advertAt=c.last_advert_timestamp;if(cacheNode(n)){contactsDirty=true;saveAt=millis();}
  }
  bool shouldAutoAddContactType(uint8_t)const override{return contactImporting||contactsAddNew();}
- void onContactsFull()override{if(contactsReplaceOldest())contactsDeleteOldest(1);}// the new contact takes the slot at its next advert
- void onContactPathUpdated(const ContactInfo &c)override{dmRouteApply(const_cast<ContactInfo&>(c));/* a manual path stays */contactsDirty=true;saveAt=millis();}
+ void onContactsFull()override{if(contactsReplaceOldest()&&contactsDeleteOldest(1))return;companion::contactsFull();}// replace oldest: the new contact takes the freed slot at its next advert; else the app is told the storage is full
+ void onContactOverwrite(const uint8_t *pub)override{companion::contactDeleted(pub);}
+ void onContactPathUpdated(const ContactInfo &c)override{dmRouteApply(const_cast<ContactInfo&>(c));/* a manual path stays */companion::pathUpdated(c);contactsDirty=true;saveAt=millis();}
  ContactInfo *processAck(const uint8_t *data)override{companion::ackReceived(data);uint32_t ack;memcpy(&ack,data,4);if(pending.active&&(pending.ack==ack||(pending.firstAck&&pending.firstAck==ack))){auto contact=lookupContactByPubKey(pending.key,32);Delivery d;d.token=pending.token;d.state=pending.route+": delivered";deliveredCallback(d);pending.active=false;return contact;}return checkConnectionsAck(data);}
- void onMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *t)override{if(c.type==ADV_TYPE_REPEATER)return;deliver(c,p,ts,t);}// repeater CLI replies are not chat messages
- void onCommandDataRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *text)override{}
+ void onMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *t)override{markConnectionActive(c);if(c.type==ADV_TYPE_REPEATER)return;deliver(c,p,ts,t);}// repeater CLI replies are not chat messages
+ void onCommandDataRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *text)override{markConnectionActive(c);companion::queueContact(c,p,ts,text,1);}// CLI reply of a server: the app's queue only
  void onCLICommandRecv(const ContactInfo&,mesh::Packet*,uint32_t,const char*,char *reply)override{reply[0]=0;} // Companion does not expose a remote CLI.
- void onSignedMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const uint8_t*,const char *t)override{deliver(c,p,ts,t);}
+ void onSignedMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const uint8_t *prefix,const char *t)override{markConnectionActive(c);contactsDirty=true;saveAt=millis();deliver(c,p,ts,t,prefix);}// room post: the app's queue as txt_type 2 and the chat, once
  void onChannelMessageRecv(const mesh::GroupChannel &ch,mesh::Packet *p,uint32_t ts,const char *t)override{
   if(!fresh(p))return;int idx=activeChannelIdx(ch);ChannelDetails detail;if(idx<0||!getChannel(idx,detail)||!detail.name[0])return;
   companion::queueChannel(idx,p,ts,t);
@@ -181,13 +194,20 @@ protected:
  uint32_t calcFloodTimeoutMillisFor(uint32_t air)const override{return 500+16*air;}
  uint32_t calcDirectTimeoutMillisFor(uint32_t air,uint8_t path)const override{return 500+(6*air+250)*((path&63)+1);}
  void onSendTimeout()override{}// MeshCore's timer starts at queue time and other sends rearm it: loop() checks pending.deadline
- uint8_t onContactRequest(const ContactInfo&,uint32_t,const uint8_t*,uint8_t,uint8_t*)override{return 0;}
- void onContactResponse(const ContactInfo&,const uint8_t *data,uint8_t len)override{companion::contactResponse(data,len);}
+ uint8_t onContactRequest(const ContactInfo &c,uint32_t ts,const uint8_t *data,uint8_t len,uint8_t *reply)override{return companion::contactRequest(c,ts,data,len,reply);}
+ void onContactResponse(const ContactInfo &c,const uint8_t *data,uint8_t len)override{companion::contactResponse(c,data,len);}
  bool onPeerPathRecv(mesh::Packet *packet,int sender,const uint8_t *secret,uint8_t *path,uint8_t pathLen,uint8_t type,uint8_t *extra,uint8_t len)override{return BaseChatMesh::onPeerPathRecv(packet,sender,secret,path,pathLen,type,extra,len);}
- bool onContactPathRecv(ContactInfo &c,uint8_t *in,uint8_t inLen,uint8_t *out,uint8_t outLen,uint8_t type,uint8_t *extra,uint8_t len)override{if(c.type==ADV_TYPE_REPEATER){if(type==PAYLOAD_TYPE_ACK&&len>=4)processAck(extra);return false;}return BaseChatMesh::onContactPathRecv(c,in,inLen,out,outLen,type,extra,len);}// repeaters: keep the saved path, no automatic reciprocal path
+ bool onContactPathRecv(ContactInfo &c,uint8_t *in,uint8_t inLen,uint8_t *out,uint8_t outLen,uint8_t type,uint8_t *extra,uint8_t len)override{if(companion::pathRecv(c,in,inLen,out,outLen,type,extra,len))return false;if(c.type==ADV_TYPE_REPEATER){if(type==PAYLOAD_TYPE_ACK&&len>=4)processAck(extra);return false;}return BaseChatMesh::onContactPathRecv(c,in,inLen,out,outLen,type,extra,len);}// repeaters: keep the saved path, no automatic reciprocal path
  void onControlDataRecv(mesh::Packet *packet)override{companion::controlData(packet,driver.getLastSNR(),driver.getLastRSSI());}
+ void onTraceRecv(mesh::Packet *packet,uint32_t tag,uint32_t auth,uint8_t flags,const uint8_t *snrs,const uint8_t *hashes,uint8_t len)override{companion::traceRecv(packet,tag,auth,flags,snrs,hashes,len);}
+ void onRawDataRecv(mesh::Packet *packet)override{companion::rawData(packet,driver.getLastSNR(),driver.getLastRSSI());}
+ void onChannelDataRecv(const mesh::GroupChannel &ch,mesh::Packet *packet,uint16_t type,const uint8_t *data,size_t len)override{int idx=activeChannelIdx(ch);if(idx>=0)companion::channelData(idx,ch,packet,type,data,len);}
 public:
  ChatMesh():BaseChatMesh(driver,ms,rng,clock,pool,tables){}
+ // BaseChatMesh keeps connections protected; companion_remote drives them.
+ using BaseChatMesh::startConnection;using BaseChatMesh::stopConnection;using BaseChatMesh::hasConnectionTo;using BaseChatMesh::markConnectionActive;
+ uint32_t traceTimeout(int len,uint8_t hops){return calcDirectTimeoutMillisFor(driver.getEstAirtimeFor(len),hops);}
+ uint16_t errFlags()const{return _err_flags;}// MeshCore's event flags, reported by CMD_GET_STATS
  // Rows formatted into a 4 KB buffer and written in blocks (same TSV as before; was ~10 String concatenations per contact).
  bool saveContacts(){File f=storage->open("/mattermesh/contacts.tmp","w");if(!f)return false;
   // Buffers live in PSRAM only while saving (static ones cost 4.6 KB of internal RAM for good).
@@ -290,7 +310,7 @@ static std::vector<BookEntry> deletableContacts(){std::vector<BookEntry> out;std
  std::stable_sort(out.begin(),out.end(),[](const BookEntry &a,const BookEntry &b){return a.at<b.at;});return out;}
 static int removeBookEntries(std::vector<int> &indices){std::sort(indices.begin(),indices.end(),std::greater<int>());int removed=0;bool routes=false;ContactInfo c;for(int index:indices){if(!chatMesh().getContactByIdx(index,c))continue;uint8_t pub[32];memcpy(pub,c.id.pub_key,32);if(!chatMesh().removeContact(c))continue;removed++;if(auto r=dmRouteFind(pub)){dmRoutes.erase(dmRoutes.begin()+(r-dmRoutes.data()));routes=true;}String key=hex(pub,32);for(int i=0;i<discoveredCount;i++)if(key==discovered[i].key){discovered[i]=discovered[--discoveredCount];break;}if(!(removed&15))delay(0);}if(routes)dmRoutesSave();/* once: the SD is slow and a book can hold many routes */if(removed){nodeChanges++;contactsDirty=true;saveAt=millis();if(state.suspended&&chatMesh().saveContacts())contactsDirty=false;/* asleep for the companion link: loop() is not running */}return removed;}
 int contactsDeletable(){return meshPtr?int(deletableContacts().size()):0;}
-int contactsDeleteOldest(int count){if(!meshPtr||count<=0)return 0;auto list=deletableContacts();std::vector<int> indices;for(int i=0;i<int(list.size())&&i<count;i++)indices.push_back(list[i].index);return removeBookEntries(indices);}
+int contactsDeleteOldest(int count){if(!meshPtr||count<=0)return 0;auto list=deletableContacts();std::vector<int> indices;ContactInfo gone;for(int i=0;i<int(list.size())&&i<count;i++){indices.push_back(list[i].index);if(chatMesh().getContactByIdx(list[i].index,gone))companion::contactDeleted(gone.id.pub_key);}return removeBookEntries(indices);}// the app hears about each one, as MeshCore's overwrite of the oldest contact
 int contactsDeleteAll(){if(!meshPtr)return 0;std::vector<int> indices;for(int i=MAX_ANON_CONTACTS,n=i+chatMesh().getNumContacts();i<n;i++)indices.push_back(i);return removeBookEntries(indices);}int contactsCount(int filter,const std::string &query){int n=0;for(int i=0;i<discoveredCount;i++){auto &c=discovered[i];if(matchesFilter(c,filter)&&mm::contactMatches(c.name,query))n++;}return n;}
 std::vector<Node> nodes(int filter,int offset,int limit){std::vector<Node> out;if(offset<0||limit<=0)return out;int index=0;for(int i=0;i<discoveredCount&&int(out.size())<limit;i++){auto &n=discovered[i];if(!matchesFilter(n,filter)||index++<offset)continue;out.push_back(toNode(n));}return out;}
 // Map pins: nodes whose advert carried a position (MeshCore 1e-6 degrees) inside the box.

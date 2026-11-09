@@ -2,46 +2,21 @@
 // Companion commands that report or change device state, and the contact pushes, as MeshCore's companion_radio
 // (examples/companion_radio/MyMesh.cpp, protocol v14). Header-only; sim/companion_state_emulator.cpp runs this same
 // code against real MeshCore nodes.
-//
-// WIRING
-//  State: one `companion_state::Module mod` (static). Set mod.self=&self_id and mod.hooks (every hook is required,
-//   all take mod.hooks.ctx first) before the first frame. Load the tuning with mod.tuning.fromBlob() at boot.
-//  Hooks: stats(ctx,Stats&) fills the counters (uptime, battery mV, error flags, queue length, noise floor, last
-//   rssi/snr, tx/rx air seconds, packet counts: MyMesh's getTotalAirTime()/1000, getReceiveAirTime()/1000,
-//   getNumSentFlood() ...); batteryMv; mcuTemperature (NAN when the board has none); saveTuning(ctx,blob,8) persists
-//   the 8 byte blob and returns false on failure; disableTransports (stop BLE/USB/Wi-Fi so the app cannot reconnect);
-//   wipe returns false when the filesystem could not be formatted; reboot does not return; installIdentity(ctx,id)
-//   persists AND installs the imported identity (self_id=id, reload contacts so cached shared secrets are dropped)
-//   and returns false when it could not be saved; runCli(ctx,cmd,reply,cap) runs one CLI line, writes the reply text
-//   (NUL terminated, cap bytes at most) and returns its length; 0 means "unknown command" (MyMesh's text is sent).
-//  Opcodes: in the `switch(cmd)` of companion.inc, send these opcodes to
-//     `if(!companion_state::handle<CayenneLPP>(mod,in,len,writeFrame))<generic ERR_UNSUPPORTED>`:
-//     21 SET_TUNING_PARAMS, 23 EXPORT_PRIVATE_KEY, 24 IMPORT_PRIVATE_KEY, 39 SEND_TELEMETRY_REQ, 40 GET_CUSTOM_VARS,
-//     41 SET_CUSTOM_VAR, 42 GET_ADVERT_PATH, 43 GET_TUNING_PARAMS, 51 FACTORY_RESET, 56 GET_STATS, 66 RUN_CLI_COMMAND.
-//     handle() answers through writeFrame(const uint8_t*,size_t) and returns true; it returns false only for 39 with
-//     36+ bytes (a telemetry request to another contact, the caller's own code) and opcodes it does not own. Frames
-//     shorter than MyMesh requires get MyMesh's ERR_UNSUPPORTED (1,1) answer, as its if-chain falls to the last else.
-//     Replace the old 40 and 43 cases. Persistence of CMD_SET_OTHER_PARAMS stays in the caller (telemetry modes byte).
-//  Tuning: ChatMesh::calcRxDelay(score,airTime) returns mod.tuning.calcRxDelay(score,airTime) and
-//   getAirtimeBudgetFactor() returns mod.tuning.airtimeFactor() (defaults rx delay 0, factor 1.0 as MyMesh; the
-//   firmware's present fixed 9.0 would be set in mod.tuning.airtime before the boot load).
-//  Pushes (all frames go to the app only when one is connected, as MyMesh checks _serial->isConnected()):
-//   ChatMesh::onDiscoveredContact(c,isNew,pathLen,path): isNew -> contactFrame(PUSH_NEW_ADVERT,c,f) else
-//     advertFrame(c.id.pub_key,f); then ALWAYS mod.adverts.record(c.id.pub_key,c.name,rtc time,path,pathLen).
-//     BaseChatMesh passes isNew=true only for an advert it did NOT store (manual add mode, hop limit, contacts full);
-//     a stored or auto-added contact is always isNew=false. onAdvertRecv just calls BaseChatMesh::onAdvertRecv,
-//     which reaches this callback in all those cases.
-//   ChatMesh::onContactPathUpdated(c): pathUpdatedFrame(c.id.pub_key,f).
-//   ChatMesh::onContactOverwrite(key) (oldest contact replaced): contactDeletedFrame(key,f). MyMesh sends the 32 byte
-//     key only, and so does this.
-//   ChatMesh::onContactsFull(): contactsFullFrame(f).
-//   ChatMesh::onContactRequest(c,ts,data,len,reply) when data[0]==REQ_TYPE_GET_TELEMETRY_DATA:
-//     return contactTelemetry<CayenneLPP>(mod,telemetryModes,c.flags,data[1],ts,reply) (0 = no answer); telemetryModes is
-//     the byte of CMD_SET_OTHER_PARAMS (base | loc<<2 | env<<4).
-//  Private key export/import follow MeshCore's compile flags ENABLE_PRIVATE_KEY_EXPORT / ENABLE_PRIVATE_KEY_IMPORT:
-//   undefined means off (MeshCore tests them with #if; only its platformio.ini turns them on) and the commands answer
-//   RESP_CODE_DISABLED (15). Add -D ENABLE_PRIVATE_KEY_EXPORT=1 -D ENABLE_PRIVATE_KEY_IMPORT=1 to enable them.
-//  Not reproducible here: the SensorManager (no settings, no extra telemetry channels), the 'gps' custom variables.
+// The firmware keeps one Module, sets its hooks (all required, each takes the hook context first) and loads the tuning
+// blob at boot. companion.inc hands the opcodes this module owns to handle, which answers through a writer; it
+// declines only a telemetry request addressed to a contact. Frames shorter than MyMesh requires get MyMesh's
+// unsupported answer, as its if-chain falls to the last else. The hooks give the counters of the stats frame, the
+// battery and chip temperature, persistence of the 8 byte tuning blob, stopping every app transport, wiping the
+// filesystem, rebooting, installing an imported identity and running one CLI line.
+// Tuning feeds the Mesh through its rx delay and airtime budget overrides. The defaults are MyMesh's, a firmware with
+// another fixed airtime factor sets it before loading the blob.
+// The ChatMesh callbacks for adverts, path updates, overwritten contacts and a full contact table produce the pushes,
+// and every advert is recorded for the advert path query. A new advert frame is for adverts the mesh did not store
+// (manual add mode, hop limit, contacts full). A telemetry request from another node is answered from the app's
+// telemetry modes byte, the one of the set other params command.
+// Private key export and import follow MeshCore's compile flags: undefined means off, and the commands answer
+// disabled. Defining both as 1 enables them, the firmware only has to persist the identity in its install hook.
+// Not reproducible here: the sensor manager (no settings, no extra telemetry channels) and the gps custom variables.
 #include <helpers/BaseChatMesh.h>
 #include <math.h>
 #include <string.h>

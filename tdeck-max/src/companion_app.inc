@@ -3,6 +3,7 @@
 // (TCP server on port 5000, same framing, only with Settings > Bluetooth > App over Wi-Fi on). The protocol itself is
 // matter::companionFrame (src/mesh/companion.inc).
 #include <WiFi.h>
+#include <nvs_flash.h>
 static matter::CompanionSession appBle,appUsb,appTcp;
 static WiFiServer appServer(5000);static WiFiClient appClient;static bool appServerOn=false,appWifiEnabled=false;
 static uint32_t appUsbAt=0,appTcpAt=0,appBleAt=0;static uint32_t appPinValue=0;
@@ -45,13 +46,23 @@ static uint8_t appSetChannel(uint8_t idx,const char *rawName,const uint8_t secre
  channelReady[id]=matter::channel(id,name,key,"*",reason);
  Serial.printf("CHANNEL_SAVED id=%d form=app ready=%d\n",id,channelReady[id]);render();return 0;
 }
+static size_t cliRunBuffer(const char *command,char *reply,size_t cap);// cli_app.inc: the app's CLI command
+static String archiveSdData();// the first-boot archive: SD data moved aside, nothing deleted
+// App factory reset: no link may reconnect, then the node becomes a new installation, as after a clean flash (empty
+// NVS: the first-boot welcome runs): the SD data of this installation moves aside to a numbered folder and the NVS is erased.
+static void appStopLinks(){device::bleServerPause(true);if(appClient)appClient.stop();if(appServerOn){appServer.end();appServerOn=false;}appWifiEnabled=false;}
+static bool appWipe(){
+ if(sdReady&&(SD.exists("/mattermesh")||SD.exists("/maxchat"))&&!archiveSdData().length())return false;// nothing to move aside is fine, a move that failed is not
+ nvs_flash_deinit();if(nvs_flash_erase()==ESP_OK)return true;
+ nvs_flash_init();return false;}// the erase failed: NVS stays usable
 void appLinkBegin(){
  appPinValue=uint32_t(device::prefGetInt("mmble","pin",0));if(appPinValue<100000||appPinValue>999999){appPinValue=100000+esp_random()%900000;device::prefPutInt("mmble","pin",int(appPinValue));}
  appWifiEnabled=device::prefGetInt("mmble","tcp",0)!=0;
  appBleCustomName=device::prefGetString("mmble","name");device::bleCompanionCustomName(appBleCustomName);
  matter::CompanionHooks h;h.batteryMv=[]()->uint16_t{return uint16_t(device::batteryState().voltage);};
  h.storageUsedKb=[]()->uint32_t{return sdReady?uint32_t(SD.usedBytes()/1024):0;};h.storageTotalKb=[]()->uint32_t{return sdReady?uint32_t(SD.totalBytes()/1024):0;};
- h.reboot=[](){Serial.flush();delay(300);ESP.restart();};h.pin=appPin;h.setPin=appSetPin;h.location=appLocation;h.setLocation=appSetLocation;h.setChannel=appSetChannel;matter::companionHooks(h);
+ h.reboot=[](){Serial.flush();delay(300);ESP.restart();};h.pin=appPin;h.setPin=appSetPin;h.location=appLocation;h.setLocation=appSetLocation;h.setChannel=appSetChannel;
+ h.disableTransports=appStopLinks;h.wipe=appWipe;h.runCli=cliRunBuffer;matter::companionHooks(h);
  device::bleCompanionConfig(matter::snapshot().config.name,appPinValue);// before connectivityBegin(): the BLE name comes from the node name
 }
 void appWifiToggle(){appWifiEnabled=!appWifiEnabled;device::prefPutInt("mmble","tcp",appWifiEnabled?1:0);if(!appWifiEnabled&&appServerOn){if(appClient)appClient.stop();appServer.end();appServerOn=false;}}

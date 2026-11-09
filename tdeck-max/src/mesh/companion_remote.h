@@ -5,34 +5,14 @@
 // frames for CLI replies and signed room posts. Header-only and generic over the mesh so the host emulator
 // (sim/companion_remote_emulator.cpp) runs this same code against real MeshCore nodes.
 //
-// WIRING (companion.inc / service.cpp; `chat` is the ChatMesh, `pend` a companion_remote::Pending that replaces the
-// firmware's anonPending):
-//  * ChatMesh must expose publicly (using-declarations): startConnection, stopConnection, hasConnectionTo,
-//    markConnectionActive (BaseChatMesh protected), and
-//      uint32_t traceTimeout(int len,uint8_t hops){return calcDirectTimeoutMillisFor(driver.getEstAirtimeFor(len),hops);}
-//  * Radio suspended (ERR_BAD_STATE): add `companion_remote::transmits(cmd,len)` to the state.suspended check.
-//  * Opcodes 26 27 28 29 36 39 (remote form, len>=36; the 4-byte self form is another slice's, handled before) 50 52:
-//      case ...: n=companion_remote::command(chat,pend,in,len,reply);  reply is >=10 bytes, n its length.
-//    Shorter frames than MyMesh needs answer ERR_UNSUPPORTED (1) like MyMesh's final else; unknown contact 2.
-//  * CMD_SEND_TXT_MSG (2): keep the len<14 check; replace `if(type!=TXT_PLAIN)` by
-//      if(type==1||type==3){n=companion_remote::sendCommand(chat,in,len,reply);...}else if(type!=TXT_PLAIN)ERR_UNSUPPORTED.
-//    The reply is RESP_SENT with expected ack 0 (no ack table entry), text stamped with the node's own clock.
-//  * CMD_SEND_ANON_REQ (57): pass `pend.req` as companion_air::sendAnon's Pending, and when it answered RESP_SENT
-//    call pend.anonSent() (MyMesh clears the other pending requests on every send).
-//  * ChatMesh callbacks:
-//      onContactResponse(c,data,len):  n=companion_remote::responseFrame(*this,pend,c,data,len,f,sizeof f); push f if n.
-//        (It runs companion_air::responseFrame on pend.req itself, so anonymous and binary requests share the one
-//        pending slot exactly like MyMesh's pending_req; do not call companion_air::responseFrame separately.)
-//      onContactPathRecv(c,in,inLen,out,outLen,type,extra,extraLen) (override, BaseChatMesh's is protected virtual):
-//        size_t n=0; if(companion_remote::pathResponse(pend,c,in,inLen,out,outLen,type,extra,extraLen,f,sizeof f,n)){push f if n;return false;}
-//        return BaseChatMesh::onContactPathRecv(...);
-//      onTraceRecv(pkt,tag,auth,flags,snrs,hashes,len) (mesh::Mesh virtual): n=traceFrame(pkt,tag,auth,flags,snrs,hashes,len,f,sizeof f) with
-//        f[177] (MAX_FRAME_SIZE+1); push f if n.
-//      onCommandDataRecv(from,pkt,ts,text): markConnectionActive(from); queue contactMsgFrame(v3,pkt,from.id.pub_key,1,ts,nullptr,0,text,f,176).
-//      onSignedMessageRecv(from,pkt,ts,prefix,text): markConnectionActive(from); sync_since/contacts dirty;
-//        queue contactMsgFrame(v3,pkt,from.id.pub_key,2,ts,prefix,4,text,f,176) (v3 = app version >= 3).
-//      processAck must end with `return checkConnectionsAck(data);` (already so). MyMesh never calls checkConnections().
-//  * No persistence or flash is involved; connections live in BaseChatMesh and die with the node.
+// The firmware feeds it from the ChatMesh callbacks of service.cpp: the responses, path returns, trace results, CLI
+// replies and signed room posts a node receives become pushes or queued message frames for the app, and the app's
+// commands in service.cpp's companion.inc call command and sendCommand. The ChatMesh exposes the connection calls and a trace
+// timeout to it, the pending requests live in one Pending that the older anonymous request path (companion_air) shares,
+// and commands that transmit are refused while the radio sleeps for the companion link (see transmits).
+// Shorter frames than MyMesh needs answer unsupported like MyMesh's final else, an unknown contact answers not found.
+// MyMesh never calls the connection keep-alive check, and neither does this.
+// No persistence or flash is involved; connections live in BaseChatMesh and die with the node.
 // Quirks kept from MyMesh: one pending request per kind and every send clears all others; login is matched by the
 // first 4 bytes of the contact key and status by the same prefix (the status reply carries no usable tag), binary
 // / telemetry / path discovery by tag. Not reproduced: MyMesh pushes responses nobody waits for as PUSH_BINARY_RESPONSE
