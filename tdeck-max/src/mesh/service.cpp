@@ -142,7 +142,7 @@ static void txFinished(mesh::Packet *packet,bool success){for(auto &t:outgoing)i
 // Companion app link (companion.inc, end of file): messages for the app's offline queue, ACKs of the app's sends.
 namespace companion {void queueContact(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *text,uint8_t txtType=0,const uint8_t *prefix=nullptr);void queueChannel(int idx,mesh::Packet *pkt,uint32_t ts,const char *text);void ackReceived(const uint8_t *data);void logRaw(float snr,float rssi,const uint8_t *raw,int len);
  void contactResponse(const ContactInfo &from,const uint8_t *data,uint8_t len);void controlData(const mesh::Packet *packet,float snr,float rssi);
- void remoteCli(const ContactInfo &from,const char *command,char *reply);// the opt-in remote CLI (companion.inc)
+ void remoteCli(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *command,char *reply);// the opt-in remote CLI (companion.inc)
  bool pathRecv(const ContactInfo &from,const uint8_t *in,uint8_t inLen,const uint8_t *out,uint8_t outLen,uint8_t type,const uint8_t *extra,uint8_t len);
  void traceRecv(const mesh::Packet *packet,uint32_t tag,uint32_t auth,uint8_t flags,const uint8_t *snrs,const uint8_t *hashes,uint8_t len);
  void rawData(const mesh::Packet *packet,float snr,float rssi);void channelData(int meshIdx,const mesh::GroupChannel &ch,mesh::Packet *packet,uint16_t type,const uint8_t *data,size_t len);
@@ -186,7 +186,7 @@ protected:
  ContactInfo *processAck(const uint8_t *data)override{companion::ackReceived(data);uint32_t ack;memcpy(&ack,data,4);if(pending.active&&(pending.ack==ack||(pending.firstAck&&pending.firstAck==ack))){auto contact=lookupContactByPubKey(pending.key,32);Delivery d;d.token=pending.token;d.state=pending.route+": delivered";deliveredCallback(d);pending.active=false;return contact;}return checkConnectionsAck(data);}
  void onMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *t)override{markConnectionActive(c);deliver(c,p,ts,t,nullptr,c.type!=ADV_TYPE_REPEATER);}// a repeater's plain message is the app's only (its CLI replies come through onCommandDataRecv)
  void onCommandDataRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *text)override{markConnectionActive(c);companion::queueContact(c,p,ts,text,1);}// CLI reply of a server: the app's queue only
- void onCLICommandRecv(const ContactInfo &c,mesh::Packet*,uint32_t,const char *command,char *reply)override{markConnectionActive(c);companion::remoteCli(c,command,reply);}// opt-in, see remote_cli.h
+ void onCLICommandRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *command,char *reply)override{markConnectionActive(c);companion::remoteCli(c,p,ts,command,reply);}// opt-in, see remote_cli.h
  void onSignedMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const uint8_t *prefix,const char *t)override{markConnectionActive(c);contactsDirty=true;saveAt=millis();deliver(c,p,ts,t,prefix);}// room post: the app's queue as txt_type 2 and the chat, once
  void onChannelMessageRecv(const mesh::GroupChannel &ch,mesh::Packet *p,uint32_t ts,const char *t)override{
   if(!fresh(p))return;int idx=activeChannelIdx(ch);ChannelDetails detail;if(idx<0||!getChannel(idx,detail)||!detail.name[0])return;

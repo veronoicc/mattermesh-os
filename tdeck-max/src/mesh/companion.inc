@@ -71,7 +71,7 @@ static void push(const uint8_t *frame,size_t n){auto &p=pushes[pushSeq%PushMax];
 static void enqueueFrame(const uint8_t *f,size_t n){if(!n||n>COMPANION_FRAME_MAX||!queueBuffer())return;if(queueCount==QueueMax){queueHead=(queueHead+1)%QueueMax;queueCount--;}auto &q=queue[(queueHead+queueCount)%QueueMax];q.len=uint8_t(n);memcpy(q.b,f,n);queueCount++;uint8_t tickle=PUSH_MSG_WAITING;push(&tickle,1);}
 static void enqueue(const Out &o){enqueueFrame(o.b,o.n);}
 static void text(Out &o,const char *t){size_t n=strlen(t);o.put(t,std::min(n,sizeof(o.b)-o.n));}
-// txtType 0 plain, 1 CLI reply of a server, 2 signed room post (prefix: the author's 4 key bytes).
+// txtType 0 plain, 1 CLI reply of a server, 2 signed room post (prefix: the author's 4 key bytes), 3 CLI command a contact sent here.
 void queueContact(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *t,uint8_t txtType,const uint8_t *prefix){uint8_t f[COMPANION_FRAME_MAX];
  enqueueFrame(f,companion_remote::contactMsgFrame(appVersion>=3,pkt,from.id.pub_key,txtType,ts,prefix,prefix?4:0,t,f,sizeof(f)));}
 // The app numbers channels 0..n-1 without holes; our mesh slots follow the conversation list, where direct chats leave
@@ -156,8 +156,11 @@ static void contactFromFrame(ContactInfo &c,uint32_t &lastmod,const uint8_t *in,
  if(len<i+MAX_PATH_SIZE+32+4)return;memcpy(c.out_path,in+i,MAX_PATH_SIZE);i+=MAX_PATH_SIZE;memcpy(c.name,in+i,32);c.name[31]=0;i+=32;
  memcpy(&c.last_advert_timestamp,in+i,4);i+=4;if(len>=i+8){memcpy(&c.gps_lat,in+i,4);memcpy(&c.gps_lon,in+i+4,4);i+=8;if(len>=i+4)memcpy(&lastmod,in+i,4);}}
 static void contactsChanged(){contactsDirty=true;saveAt=millis();}
-// MyMesh::onCLICommandRecv for a contact: only with the switch on and the contact flagged for remote CLI (remote_cli.h).
-void remoteCli(const ContactInfo &from,const char *command,char *reply){remoteCliReply(prefs().remoteCli,from.isRemoteCLIAllowed(),command,hooks.runCli,reply);}
+// MyMesh::onCLICommandRecv for a contact: with the switch on and the contact flagged for remote CLI the command runs
+// (remote_cli.h); every other command is queued to the app as a CLI command, as stock does for an unflagged contact.
+void remoteCli(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *command,char *reply){
+ if(!prefs().remoteCli||!from.isRemoteCLIAllowed()){reply[0]=0;queueContact(from,pkt,ts,command,3,nullptr);return;}
+ remoteCliReply(true,true,command,hooks.runCli,reply);}
 }
 void companionHooks(const CompanionHooks &h){companion::hooks=h;}
 void companionFrame(CompanionSession &s,const uint8_t *in,size_t len,CompanionWriter w,void *ctx){

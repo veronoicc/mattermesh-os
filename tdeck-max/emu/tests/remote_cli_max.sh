@@ -32,9 +32,11 @@ add_contact(b, ak, "Alpha", 1, 0)
 pings = 0
 def command(text, answered=False):
     """The command, then (after a pause: the virtual radio can lose a packet that follows another at once) plain pings
-    until one reaches Alpha's app queue, which proves the link while no answer is expected. Returns the answer, if any.
-    A command that is expected to be answered is sent again when its answer does not come."""
+    until one reaches Alpha's app queue, which proves the link while no answer is expected. Messages queued before the
+    ping are collected. Returns (answer or None, messages queued to Alpha's app). A command that is expected to be
+    answered is sent again when its answer does not come."""
     global pings
+    queued = []
     for attempt in range(3 if answered else 1):
         send_text(b, ak, 3, text)
         time.sleep(4)
@@ -42,23 +44,33 @@ def command(text, answered=False):
             pings += 1
             send_text(b, ak, 0, "ping%d" % pings)
             m = next_message(a, 15)
+            while m and not m[2].startswith("ping"):
+                queued.append(m)
+                m = next_message(a, 15)
             if m: break
         assert m and m[:2] == (bk[:6], 0) and m[2].startswith("ping"), "the link to Alpha is down: %r" % (m,)
         answer = next_message(b, 20)
-        if answer: return answer
-    return None
+        if answer: return answer, queued
+    return None, queued
 if n == 1:
     add_contact(a, bk, "Bravo", 1, 0x10)       # flagged for remote CLI, the setting is off
-    assert command("get name") is None, "answered with the setting off"
+    answer, queued = command("get name")
+    assert answer is None, "answered with the setting off"
+    assert queued == [(bk[:6], 3, "get name")], "a command that did not run must reach the app as a CLI command: %r" % (queued,)
 elif n == 2:
     add_contact(a, bk, "Bravo", 1, 0)          # the setting is on, the contact is not flagged
-    assert command("get name") is None, "answered an unflagged contact"
+    answer, queued = command("get name")
+    assert answer is None, "answered an unflagged contact"
+    assert queued == [(bk[:6], 3, "get name")], "an unflagged contact's command must reach the app as a CLI command (stock MyMesh): %r" % (queued,)
     add_contact(a, bk, "Bravo", 1, 0x10)
-    assert command("get name", True) == (ak[:6], 1, "Alpha"), "no answer with the setting on and the contact flagged"
-    assert command("help", True) == (ak[:6], 1, "Unknown command"), "a device-local command was not refused"
+    answer, queued = command("get name", True)
+    assert answer == (ak[:6], 1, "Alpha"), "no answer with the setting on and the contact flagged"
+    assert queued == [], "a command that ran must not also be queued: %r" % (queued,)
+    answer, queued = command("help", True)
+    assert answer == (ak[:6], 1, "Unknown command"), "a device-local command was not refused"
 else:
     assert contact_flags(a, bk) == 0x10, "the contact's flag was not saved"
-    assert command("get name", True) == (ak[:6], 1, "Alpha"), "no answer after the restart"
+    assert command("get name", True)[0] == (ak[:6], 1, "Alpha"), "no answer after the restart"
 P
  wait $a $b 2>/dev/null||true
 }
