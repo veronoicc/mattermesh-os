@@ -15,7 +15,7 @@ enum : uint8_t {
  CMD_RESET_PATH=13,CMD_REMOVE_CONTACT=15,CMD_SHARE_CONTACT=16,CMD_EXPORT_CONTACT=17,CMD_IMPORT_CONTACT=18,CMD_GET_CONTACT_BY_KEY=30,
  CMD_REBOOT=19,CMD_GET_BATT_AND_STORAGE=20,CMD_DEVICE_QUERY=22,CMD_HAS_CONNECTION=28,CMD_GET_CHANNEL=31,CMD_SET_CHANNEL=32,CMD_SET_DEVICE_PIN=37,
  CMD_SET_ADVERT_LATLON=14,CMD_SET_OTHER_PARAMS=38,CMD_SET_FLOOD_SCOPE_KEY=54,CMD_SET_AUTOADD_CONFIG=58,CMD_GET_AUTOADD_CONFIG=59,RESP_AUTOADD_CONFIG=25,
- CMD_GET_CUSTOM_VARS=40,CMD_GET_TUNING_PARAMS=43,CMD_SET_PATH_HASH_MODE=61,
+ CMD_GET_CUSTOM_VARS=40,CMD_GET_TUNING_PARAMS=43,CMD_SET_PATH_HASH_MODE=61,CMD_GET_ALLOWED_REPEAT_FREQ=60,RESP_ALLOWED_REPEAT_FREQ=26,
  RESP_SENT=6,RESP_CONTACT_MSG_RECV=7,RESP_CHANNEL_MSG_RECV=8,RESP_CONTACT_MSG_RECV_V3=16,RESP_CHANNEL_MSG_RECV_V3=17,PUSH_SEND_CONFIRMED=0x82,PUSH_MSG_WAITING=0x83,PUSH_LOG_RX_DATA=0x88,
  TXT_PLAIN=0,ERR_TABLE_FULL=3,
  RESP_OK=0,RESP_ERR=1,RESP_CONTACTS_START=2,RESP_CONTACT=3,RESP_END_OF_CONTACTS=4,RESP_SELF_INFO=5,RESP_CURR_TIME=9,
@@ -99,7 +99,7 @@ void companionFrame(CompanionSession &s,const uint8_t *in,size_t len,CompanionWr
  case CMD_DEVICE_QUERY:{
   appVersion=len>=2?in[1]:0;s.active=true;s.pushSeq=pushSeq;s.logSeq=logSeq;appSeen=true;queueBuffer();logBuffer();// pushes from before this connection are not replayed
   o.u8(RESP_DEVICE_INFO);o.u8(ProtocolVersion);o.u8(uint8_t(std::min(255,MAX_CONTACTS/2)));o.u8(MAX_GROUP_CHANNELS);o.u32(hooks.pin?hooks.pin():0);
-  o.text(__DATE__,12);o.text("LilyGO " MM_DEVICE_MODEL " / MatterMesh OS",40);o.text("MatterMesh " MM_BUILD_VERSION,20);o.u8(0);o.u8(uint8_t(cfg.pathBytes?cfg.pathBytes-1:0));
+  o.text(__DATE__,12);o.text("LilyGO " MM_DEVICE_MODEL " / MatterMesh OS",40);o.text("MatterMesh " MM_BUILD_VERSION,20);o.u8(cfg.repeat?1:0);o.u8(uint8_t(cfg.pathBytes?cfg.pathBytes-1:0));
   send(o,w,ctx);break;}
  case CMD_APP_START:{
   s.listing=false;int32_t lat=0,lon=0;if(hooks.location)hooks.location(lat,lon);
@@ -118,8 +118,9 @@ void companionFrame(CompanionSession &s,const uint8_t *in,size_t len,CompanionWr
  case CMD_SET_ADVERT_NAME:{if(len<2){err(ERR_ILLEGAL_ARG,w,ctx);break;}String name;for(size_t i=1;i<len&&i<=31;i++)name+=char(in[i]);name.trim();cfg.name=name;apply(cfg,w,ctx);break;}
  case CMD_SET_RADIO_PARAMS:{
   if(len<11){err(ERR_ILLEGAL_ARG,w,ctx);break;}uint32_t f=read32(1),bw=read32(5);uint8_t sf=in[9],cr=in[10],repeat=len>11?in[11]:0;
-  if(repeat){err(ERR_ILLEGAL_ARG,w,ctx);break;}// the client repeat mode is not part of MatterMesh OS
-  cfg.frequency=f/1000.0f;cfg.bandwidth=bw/1000.0f;cfg.sf=sf;cfg.cr=cr;apply(cfg,w,ctx);break;}
+  if(repeat&&!repeat_policy::validFreq(f)){err(ERR_ILLEGAL_ARG,w,ctx);break;}// client repeat only at an allowed frequency; a frame without the byte clears it (MyMesh)
+  cfg.frequency=f/1000.0f;cfg.bandwidth=bw/1000.0f;cfg.sf=sf;cfg.cr=cr;cfg.repeat=repeat!=0;apply(cfg,w,ctx);break;}
+ case CMD_GET_ALLOWED_REPEAT_FREQ:o.n=repeat_policy::allowedFrame(o.b,sizeof(o.b));send(o,w,ctx);break;
  case CMD_SET_RADIO_TX_POWER:{if(len<2){err(ERR_ILLEGAL_ARG,w,ctx);break;}cfg.power=int8_t(in[1]);apply(cfg,w,ctx);break;}
  case CMD_SET_PATH_HASH_MODE:{if(len<3||in[1]!=0||in[2]>=3){err(ERR_ILLEGAL_ARG,w,ctx);break;}cfg.pathBytes=uint8_t(in[2]+1);apply(cfg,w,ctx);break;}
  case CMD_ADD_UPDATE_CONTACT:{

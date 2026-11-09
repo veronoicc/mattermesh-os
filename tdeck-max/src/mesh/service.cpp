@@ -12,6 +12,7 @@
 #include "radio_parameters.h"
 #include "companion_settings.h"
 #include "companion_air.h"
+#include "repeat_policy.h"
 #include <CayenneLPP.h>
 #include <helpers/SensorManager.h>
 #include <ArduinoJson.h>
@@ -155,7 +156,7 @@ protected:
  void recordRx(mesh::Packet *packet,int len);
  void logTx(mesh::Packet *packet,int)override{txFinished(packet,true);}
  void logTxFail(mesh::Packet *packet,int)override{txFinished(packet,false);}
- bool allowPacketForward(const mesh::Packet*)override{return false;} // Companion, never a repeater.
+ bool allowPacketForward(const mesh::Packet*)override{return repeat_policy::mayForward(state.config.repeat,pool.getOutboundTotal(),getRemainingTxBudget());} // Client repeat mode only: forwarding leaves queue and airtime for own messages.
  float getAirtimeBudgetFactor()const override{return 9.0f;} // TX <=10% airtime, conservative queue pacing.
  int calcRxDelay(float,uint32_t)const override{return 0;}
  void sendFloodScoped(const ContactInfo&,mesh::Packet *pkt,uint32_t delay=0)override{flood(pkt,delay);}
@@ -223,6 +224,7 @@ static void dmNoAck(){
    Delivery d;d.token=pending.token;d.state="No ACK: retrying by flood";deliveredCallback(d);return;}}
  Delivery d;d.token=pending.token;d.state=pending.manual?String("Manual path: no ACK"):pending.route+": no ACK";deliveredCallback(d);pending.active=false;}
 
+static uint32_t freqKHz(float mhz){return uint32_t(lroundf(mhz*1000.0f));}
 static bool valid(const Config &c){return validRadioParameters(c.frequency,c.bandwidth,c.sf,c.cr,c.power)&&validCompanionName(c.name.c_str())&&validPathHashBytes(c.pathBytes);}
 static bool verifyIdentity(){const uint8_t challenge[]={0x4d,0x61,0x74,0x74,0x65,0x72};uint8_t signature[64];chatMesh().self_id.sign(signature,challenge,sizeof(challenge));return chatMesh().self_id.verify(signature,challenge,sizeof(challenge));}
 // RF power path as the stock LilyGO T-Deck Max firmware (hardware/examples/factory/peri_lora.cpp):
@@ -236,7 +238,7 @@ static bool initRadio(){state.error=radio.begin(state.config.frequency,state.con
  radio.calibrateImage(state.config.frequency);
  state.error=radio.setCRC(1);if(state.error)return false;state.error=radio.setCurrentLimit(140);if(state.error)return false;state.error=radio.setDio2AsRfSwitch(true);if(state.error)return false;driver.setParams(state.config.frequency,state.config.bandwidth,state.config.sf,state.config.cr);driver.begin();state.error=radio.startReceive();return state.error==0;}
 bool begin(fs::FS &fs,ExtensionIOXL9555 &io,bool ioReady,Receiver receiver,Delivered delivered){storage=&fs;expansion=&io;receivedCallback=receiver;deliveredCallback=delivered;if(!meshPtr){void *memory=heap_caps_malloc(sizeof(ChatMesh),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);void *cache=heap_caps_malloc(sizeof(CachedNode)*NODE_CAPACITY,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);if(!memory||!cache){heap_caps_free(memory);heap_caps_free(cache);state.error=-1004;return false;}meshPtr=new(memory) ChatMesh();discovered=static_cast<CachedNode*>(cache);discoveredCount=0;if(!rxPackets.ready()){void *slots=heap_caps_malloc(sizeof(RxPacket)*RX_LOG_CAPACITY,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);if(slots)rxPackets.attach(static_cast<RxPacket*>(slots),RX_LOG_CAPACITY);}}if(!ioReady){state.error=-1001;return false;}io.pinMode(BOARD_XL9555_04_LORA_SEL,OUTPUT);antennaPrefs.begin("mmantenna",false);bool internal=antennaPrefs.getBool("internal",true)||!EXTERNAL_ANTENNA_ENABLED;io.digitalWrite(BOARD_XL9555_04_LORA_SEL,internal?HIGH:LOW);if(io.digitalRead(BOARD_XL9555_04_LORA_SEL)!=(internal?HIGH:LOW)){state.error=-1005;return false;}state.internal=internal;io.pinMode(BOARD_XL9555_01_LORA_EN,OUTPUT);io.digitalWrite(BOARD_XL9555_01_LORA_EN,HIGH);delay(30);
- fs.mkdir("/mattermesh");File f=fs.open(device::sdSavedPath(fs,"/mattermesh/radio.conf","/mattermesh/radio.bak"));if(f){Config cfg;String row=f.readStringUntil('\n');cfg.frequency=field(row,0).toFloat();cfg.bandwidth=field(row,1).toFloat();cfg.sf=field(row,2).toInt();cfg.cr=field(row,3).toInt();cfg.power=field(row,4).toInt();cfg.name=field(row,5);cfg.name.trim();int bytes;bool widthValid=parseSavedPathBytes(field(row,6).c_str(),bytes);if(widthValid)cfg.pathBytes=bytes;if(widthValid&&valid(cfg))state.config=cfg;f.close();}setOutgoingPathHashBytes(state.config.pathBytes);
+ fs.mkdir("/mattermesh");File f=fs.open(device::sdSavedPath(fs,"/mattermesh/radio.conf","/mattermesh/radio.bak"));if(f){Config cfg;String row=f.readStringUntil('\n');cfg.frequency=field(row,0).toFloat();cfg.bandwidth=field(row,1).toFloat();cfg.sf=field(row,2).toInt();cfg.cr=field(row,3).toInt();cfg.power=field(row,4).toInt();cfg.name=field(row,5);cfg.name.trim();int bytes;bool widthValid=parseSavedPathBytes(field(row,6).c_str(),bytes);if(widthValid)cfg.pathBytes=bytes;if(widthValid&&valid(cfg)){cfg.repeat=field(row,7).toInt()==1&&repeat_policy::validFreq(freqKHz(cfg.frequency));/* rows saved before repeat mode have no 8th field: off */state.config=cfg;}f.close();}setOutgoingPathHashBytes(state.config.pathBytes);
  clock.init(fs);File id=fs.open("/mattermesh/identity.id");if(id){state.identity=id.size()==96&&chatMesh().self_id.readFrom(id)&&verifyIdentity();id.close();if(!state.identity){state.error=-1002;return false;}}else{for(int n=0;n<10;n++){chatMesh().self_id=mesh::LocalIdentity(&rng);if(chatMesh().self_id.pub_key[0]!=0&&chatMesh().self_id.pub_key[0]!=255)break;}File out=fs.open("/mattermesh/identity.tmp","w");state.identity=out&&chatMesh().self_id.writeTo(out)&&verifyIdentity();if(out){out.flush();out.close();}state.identity=state.identity&&fs.rename("/mattermesh/identity.tmp","/mattermesh/identity.id");if(!state.identity){state.error=-1003;return false;}}
  if(!initRadio())return false;chatMesh().begin();chatMesh().loadContacts();dmRoutesLoad();state.ready=true;return true;
 }
@@ -244,6 +246,7 @@ uint32_t nodesRevision(){return nodeChanges;}
 
 bool radioSuspend(bool off){if(!state.ready)return false;
  if(off==state.suspended)return true;
+ if(off&&!repeat_policy::mayStopRadio(state.config.repeat))return false;// a repeater that stops listening silently stops repeating
  // A DM still queued or waiting goes with the radio: its packet leaves the queue (no stale send after a wake).
  if(off&&pending.active){for(auto &o:outgoing)if(o.token==pending.token&&o.packet){for(int i=0;i<pool.getOutboundTotal();i++)if(pool.getOutboundByIdx(i)==o.packet){pool.free(pool.removeOutboundByIdx(i));break;}o.packet=nullptr;}
   Delivery d;d.token=pending.token;d.state="Not sent: radio off (companion link)";deliveredCallback(d);pending.active=false;}
@@ -314,20 +317,25 @@ bool antenna(bool internal,String &reason,bool confirmed){
  radio.standby();expansion->digitalWrite(BOARD_XL9555_04_LORA_SEL,old?HIGH:LOW);driver.begin();state.error=radio.startReceive();state.ready=state.error==0&&expansion->digitalRead(BOARD_XL9555_04_LORA_SEL)==(old?HIGH:LOW);state.internal=old;reason=hardware?"Antenna save/RX failed":"Antenna switch I2C error";return false;
 }
 
-bool configure(const Config &cfg,String &reason){
+bool configure(const Config &requested,String &reason){
+ Config cfg=requested;const bool repeatDropped=cfg.repeat&&!repeat_policy::validFreq(freqKHz(cfg.frequency));if(repeatDropped)cfg.repeat=false;// a frequency outside the allowed ranges ends client repeat
  if(!valid(cfg)){reason="Invalid radio settings";return false;}
- if(!state.ready||busy()){reason="Radio unavailable or busy";return false;}
  Config old=state.config;bool rfChanged=old.frequency!=cfg.frequency||old.bandwidth!=cfg.bandwidth||old.sf!=cfg.sf||old.cr!=cfg.cr||old.power!=cfg.power;
+ if(cfg.repeat&&!old.repeat&&state.suspended){reason="Radio off (companion link)";return false;}
+ // A repeater is rarely idle: switching only the repeat flag (clearing it above all) must not wait for a quiet radio.
+ if(!state.ready||(busy()&&(rfChanged||cfg.repeat==old.repeat))){reason="Radio unavailable or busy";return false;}
  if(rfChanged&&state.suspended)state.config=cfg;/* asleep for the companion link: applied when it wakes */else if(rfChanged){radio.standby();state.config=cfg;if(!initRadio()){state.config=old;state.ready=initRadio();reason="Radio settings rejected";return false;}}
  File f=storage->open("/mattermesh/radio.tmp","w");
- String row=String(cfg.frequency,3)+"\t"+String(cfg.bandwidth,2)+"\t"+String(cfg.sf)+"\t"+String(cfg.cr)+"\t"+String(cfg.power)+"\t"+cfg.name+"\t"+String(cfg.pathBytes)+"\n";
+ String row=String(cfg.frequency,3)+"\t"+String(cfg.bandwidth,2)+"\t"+String(cfg.sf)+"\t"+String(cfg.cr)+"\t"+String(cfg.power)+"\t"+cfg.name+"\t"+String(cfg.pathBytes)+"\t"+String(cfg.repeat?1:0)+"\n";
  const bool opened=bool(f);bool written=opened&&f.print(row)==row.length();if(f){f.flush();f.close();}
  // print() only fills a buffer: the size on the card tells whether the row really got there.
  if(written){File saved=storage->open("/mattermesh/radio.tmp");written=saved&&saved.size()==row.length();if(saved)saved.close();}
  const bool ok=written&&device::sdReplace(*storage,"/mattermesh/radio.tmp","/mattermesh/radio.conf","/mattermesh/radio.bak");
  if(!ok){storage->remove("/mattermesh/radio.tmp");state.config=old;if(rfChanged)state.ready=initRadio();reason=String("SD settings save failed: ")+(!opened?"open":!written?"write":"rename");return false;}
- state.config=cfg;setOutgoingPathHashBytes(cfg.pathBytes);reason="LoRa settings saved";return true;
+ state.config=cfg;setOutgoingPathHashBytes(cfg.pathBytes);reason=repeatDropped?"LoRa settings saved / repeat off":"LoRa settings saved";return true;
 }
+bool repeatEnabled(){return state.config.repeat;}
+bool setRepeat(bool on,String &reason){Config cfg=state.config;cfg.repeat=on;if(on&&!repeat_policy::validFreq(freqKHz(cfg.frequency))){reason="Repeat needs an allowed frequency";return false;}return configure(cfg,reason);}
 bool registerScope(const String &scope){if(!scope.length()||scope=="*"||scope=="unknown")return true;for(auto &value:knownScopes)if(value==scope)return true;if(knownScopes.size()>=64)return false;knownScopes.push_back(scope);return true;}
 bool contactPath(const String &key,uint8_t &encoded,uint8_t *bytes,size_t capacity){uint8_t pub[32];if(!meshPtr||!unhex(key,pub,32))return false;auto c=chatMesh().lookupContactByPubKey(pub,32);if(!c)return false;encoded=c->out_path_len;size_t n=encoded==OUT_PATH_UNKNOWN?0:(encoded&63)*((encoded>>6)+1);if(n>capacity||n>sizeof(c->out_path))return false;memcpy(bytes,c->out_path,n);return true;}
 std::vector<Node> recentRepeaters(int limit){std::vector<int> idx;for(int i=0;i<discoveredCount;i++)if(discovered[i].type==ADV_TYPE_REPEATER)idx.push_back(i);

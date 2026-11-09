@@ -9,7 +9,7 @@
 #include <ExtensionIOXL9555.hpp>
 #include <vector>
 namespace matter {
-struct Config { float frequency=869.618f,bandwidth=62.5f;uint8_t sf=8,cr=8,pathBytes=OUTGOING_PATH_HASH_BYTES;int8_t power=MAX_TX_POWER;String name="MatterMesh"; };
+struct Config { float frequency=869.618f,bandwidth=62.5f;uint8_t sf=8,cr=8,pathBytes=OUTGOING_PATH_HASH_BYTES;int8_t power=MAX_TX_POWER;String name="MatterMesh";bool repeat=false;/* client repeat mode: forward other nodes' packets */ };
 struct Node {String key,name;uint8_t type=0;uint32_t seen=0,advertAt=0;int hops=-1;float rssi=0,snr=0;bool live=false;int32_t lat=0,lon=0;};
 struct NodePin {double lat=0,lon=0;bool repeater=false,live=false;char name[16]={};};
 struct Received {int channelId=-1;String key,channel,sender,body,scope,path;uint32_t timestamp=0;int hops=-1;bool direct=false;};
@@ -34,6 +34,8 @@ int repeaterPinsForPrefix(const String &prefix,NodePin *out,int capacity,int &ma
 String nodeNameForPrefix(const String &prefix,int &matches,int type=0);
 int antennaSelectLevel();bool antennaSavedInternal();bool antenna(bool internal,String &reason,bool confirmed=false);
 bool configure(const Config &config,String &reason);
+bool repeatEnabled();// client repeat mode, stored with the radio settings (old saved settings load as off)
+bool setRepeat(bool on,String &reason);// off always works; on only at an allowed frequency (repeat_policy.h), never while the radio is asleep
 bool channel(int id,const String &name,const String &key,const String &scope,String &reason);
 void clearChannels();
 // Secret actually configured for a channel slot (also derived #hashtag / Public keys), 32 hex.

@@ -34,6 +34,7 @@ static void rlConnectSaved(){if(!rlSaved())return;device::RadioLinkPeer p;p.name
 // On: the T-Deck radio sleeps and the companion is (re)connected; off: the link closes and the radio wakes.
 static void rlSetOn(bool on){
  if(on&&!rlSaved()){notice="Pair a companion first";if(rlOn){rlOn=false;rlSave();matter::radioSuspend(false);markRadioDirty();}return;}
+ if(on&&matter::repeatEnabled()){notice="Repeat mode is on: the T-Deck radio stays on";markRadioDirty();return;}// a repeater that stops listening stops repeating
  rlOn=on;rlSave();rlAskAgain();bool radio=matter::radioSuspend(on)||!matter::snapshot().identity;/* no radio to restart without an SD identity */
  if(on)rlConnectSaved();else{device::radioLinkDisconnect();rlClient.disconnected();}
  notice=on?"Using the companion radio":radio?"T-Deck radio back on":"T-Deck radio did not restart";markRadioDirty();}
@@ -76,7 +77,7 @@ void radioLinkLoop(){
   static uint32_t connectsSeen=0;if(st.phase==device::RadioLinkPhase::Connected&&rlPhase==device::RadioLinkPhase::Connected&&st.connects!=connectsSeen){rlClient.disconnected();rlClient.connected(now);rlTimeSent=false;}connectsSeen=st.connects;
   if(st.phase!=rlPhase){auto was=rlPhase;rlPhase=st.phase;
    if(st.phase==device::RadioLinkPhase::Connected){rlClient.connected(now);rlTimeSent=false;rlAuthFails=0;
-    if(rlPairing){rlPairing=false;rlAddress=rlPending.address;rlType=rlPending.addressType;rlName=rlPending.name;rlPin=rlPendingPin;rlOn=true;rlSave();rlAskAgain();matter::radioSuspend(true);notice="Companion paired: its radio is in use";}}
+    if(rlPairing){rlPairing=false;rlAddress=rlPending.address;rlType=rlPending.addressType;rlName=rlPending.name;rlPin=rlPendingPin;rlOn=true;rlSave();rlAskAgain();notice=matter::radioSuspend(true)?"Companion paired: its radio is in use":"Companion paired / repeat on: T-Deck radio stays on";}}
    else if(was==device::RadioLinkPhase::Connected){rlClient.disconnected();if(st.phase==device::RadioLinkPhase::Failed)notice="Companion disconnected";}
    if(st.phase==device::RadioLinkPhase::Failed&&rlPairing){rlPairing=false;notice=st.message;if(!rlOn&&!rlPage())device::radioLinkDisconnect();/* BLE back to the phone */}
    // A saved companion that refuses our keys twice has dropped its bond (reflashed, reset): ours goes too, so the
