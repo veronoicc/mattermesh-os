@@ -14,10 +14,12 @@ static bool mwLinked(){return mwToken.length()&&millis()-mwSeenAt<MwSessionIdleM
 static String mwAddress(){auto c=device::connectivityStatus();return c.connected&&c.address.length()?"http://"+c.address:String();}
 /* The switch on its page turns it on or off; that choice is kept (NVS mmweb/on): after a restart (an OTA update too)
    it comes back on with the same code and the same browser session, so the open page carries on. */
+static bool mwListening=false;/* port 80 opened: lwip exists only after Wi-Fi was started once since boot */
+static void mwListen(){if(!mwListening&&WiFi.getMode()!=WIFI_MODE_NULL){mwServer.begin();mwListening=true;}}
 static bool mwPaused=false;// the Trails upload page took port 80: back on when it closes
 static void webStart(bool restore=false){if(mwOn)return;
- if(restore&&device::prefGetString("mmweb","code").length()==4){strlcpy(mwCode,device::prefGetString("mmweb","code").c_str(),sizeof mwCode);mwFails=0;mwToken=device::prefGetString("mmweb","tok");mwSeenAt=millis();mwPeer="";}else{mwNewCode();mwToken="";mwPeer="";}mwServer.begin();mwOn=true;mwPaused=false;mwStep=MwStep::Idle;Serial.println("WEB_ON");}
-static void webStop(){if(!mwOn)return;if(mwClient)mwClient.stop();mwServer.end();mwOn=false;mwStep=MwStep::Idle;mwHead.clear();mwBody.clear();mwToken="";mwPeer="";Serial.println("WEB_OFF");}
+ if(restore&&device::prefGetString("mmweb","code").length()==4){strlcpy(mwCode,device::prefGetString("mmweb","code").c_str(),sizeof mwCode);mwFails=0;mwToken=device::prefGetString("mmweb","tok");mwSeenAt=millis();mwPeer="";}else{mwNewCode();mwToken="";mwPeer="";}mwOn=true;mwListen();mwPaused=false;mwStep=MwStep::Idle;Serial.println("WEB_ON");}
+static void webStop(){if(!mwOn)return;if(mwClient)mwClient.stop();if(mwListening){mwServer.end();mwListening=false;}mwOn=false;mwStep=MwStep::Idle;mwHead.clear();mwBody.clear();mwToken="";mwPeer="";Serial.println("WEB_OFF");}
 bool webActive(){return mwOn;}
 void webPause(){if(mwOn){webStop();mwPaused=true;}}
 void webResume(){if(mwPaused)webStart();}
@@ -188,6 +190,7 @@ static void mwReadBody(){uint32_t t0=millis();
  if(!mwClient.connected()||millis()-mwLast>MwHeaderTimeoutMs){mwClient.stop();mwStep=MwStep::Idle;mwHead.clear();mwBody.clear();}}
 void webLoop(){static bool booted=false;if(!booted){booted=true;if(device::prefGetInt("mmweb","on",0)==1)webStart(true);}
  if(!mwOn)return;
+ mwListen();if(!mwListening)return;/* Wi-Fi never on since boot: wait, opening the port then crashed (tcpip_send_msg_wait_sem Invalid mbox) */
  static bool shownLinked=false;bool linked=mwLinked();if(linked!=shownLinked){shownLinked=linked;if(screen==Screen::Section&&section==mm::WebAppSection)render();}
  if(mwStep==MwStep::Idle){WiFiClient next=mwServer.available();if(!next)return;mwClient=next;mwStep=MwStep::Header;mwHead.clear();mwLast=millis();}
  if(mwStep==MwStep::Header)mwReadHeader();else if(mwStep==MwStep::Body)mwReadBody();}

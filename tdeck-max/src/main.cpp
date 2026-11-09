@@ -11,6 +11,11 @@ SET_LOOP_TASK_STACK_SIZE(UI_TASK_STACK_BYTES);
 #include <SPI.h>
 #include <Wire.h>
 #include <SD.h>
+#include "sd_diskio.h"
+extern "C"{
+#include "ff.h"
+#include "diskio.h"
+}
 #include <sys/select.h>
 #include <GxEPD2_BW.h>
 #include <Adafruit_TCA8418.h>
@@ -105,7 +110,7 @@ GFXcanvas1 frame(mm::W,mm::H);
 mm::RefreshTracker refreshTracker;int paintedScreen=-1;
 static_assert(mm::W==GxEPD2_310_GDEQ031T10::WIDTH&&mm::H==GxEPD2_310_GDEQ031T10::HEIGHT,"UI must match physical panel");
 Adafruit_TCA8418 keyboard;
-bool sdReady=false, keyboardReady=false;
+bool sdReady=false, keyboardReady=false;String sdProblem="SD unavailable / check card";/* why the card did not mount (sdDiagnose) */
 static char messageFirstLetter(char c,bool opening){return opening&&c>='a'&&c<='z'?char(c-'a'+'A'):c;}int accentTaps=0;bool accentTyped=false;// accent key taps before the next letter (1 = first variant ... 4) / a letter typed while it is held
 int accentMode=2,accentFocus=2;static bool accentContext();static bool accentHeld();static bool shiftHeld();bool setAccentMode(int mode);void loadAccentMode();// accent key (defined with the keyboard handling)
 int homeWidget=mm::HomeWidgetDefault,homeWidgetFocus=mm::HomeWidgetDefault;// Settings > Home widgets > Beside clock, NVS "mmui"/"homewg"
@@ -1156,6 +1161,20 @@ static String archiveSdData(){
 }
 
 // ---- Welcome -----------------------------------------------------------------
+// The card did not mount: tell an absent card from one the firmware cannot read. FAT32 only (the framework has no exFAT:
+// cards of 64 GB and more come exFAT from the shop). Reads sector 0 only, never writes.
+static String sdDiagnose(){
+ for(int pin:{BOARD_LORA_CS,BOARD_SD_CS,BOARD_EPD_CS})digitalWrite(pin,HIGH);
+ uint8_t pdrv=sdcard_init(BOARD_SD_CS,&SPI,1000000);if(pdrv==0xFF)return "SD unavailable / check card";
+ String why;if(disk_initialize(pdrv)&STA_NOINIT)why="No SD card found";
+ else{static uint8_t b[512];if(disk_read(pdrv,b,0,1)!=RES_OK)why="SD unreadable / check card";
+  else{auto fs=[&](const uint8_t *at)->String{if(!memcmp(at+3,"EXFAT   ",8))return "exFAT";if(!memcmp(at+3,"NTFS    ",8))return "NTFS";return "";};
+   String kind=fs(b);uint8_t part=b[0x1C2];/* first MBR partition type */
+   if(!kind.length()&&b[510]==0x55&&b[511]==0xAA&&part==0x07){uint32_t lba=b[0x1C6]|b[0x1C7]<<8|b[0x1C8]<<16|uint32_t(b[0x1C9])<<24;kind=disk_read(pdrv,b,lba,1)==RES_OK?fs(b):String("");if(!kind.length())kind="exFAT";}
+   if(!kind.length()&&b[510]==0x55&&b[511]==0xAA&&part==0xEE)kind="GPT";
+   why=kind.length()?"SD is "+kind+": format it FAT32":"SD not FAT32: format it FAT32";
+   Serial.printf("BOOT_SD_DIAG part=0x%02X kind=%s\n",part,kind.c_str());}}
+ sdcard_uninit(pdrv);return why;}
 static void welcomeFillPresets(){welcomeListBand=welcomeBand;welcomeList.clear();for(int p=0;p<matter::RADIO_PRESET_COUNT;p++)if(matter::radioBand(matter::RADIO_PRESETS[p].frequency)==welcomeBand)welcomeList.push_back(p);
  int pick=0;for(int k=0;k<int(welcomeList.size());k++)if(!strcmp(matter::RADIO_PRESETS[welcomeList[k]].name,welcomeBand==868?"EU/UK (Narrow)":"USA")){pick=k;break;}welcomeFocus=pick;}
 static int welcomeScroll(){return max(0,min(welcomeFocus-mm::WelcomeRows/2,int(welcomeList.size())-mm::WelcomeRows));}
@@ -1168,7 +1187,7 @@ void startWelcome(){screen=Screen::Welcome;welcomeStep=0;welcomeWifiChoice=0;wel
 static void finishWelcome(){
  if(welcomeFocus<0||welcomeFocus>=int(welcomeList.size()))return;const auto &p=matter::RADIO_PRESETS[welcomeList[welcomeFocus]];
  auto cfg=matter::snapshot().config;cfg.frequency=p.frequency;cfg.bandwidth=p.bandwidth;cfg.sf=p.sf;cfg.cr=p.cr;cfg.name=welcomeName;cfg.pathBytes=welcomeBytes;
- String reason;if(!matter::configure(cfg,reason)){notice=reason.length()?reason:"Radio not saved";render();return;}
+ String reason;if(!matter::configure(cfg,reason)){notice=!sdReady?sdProblem:reason.length()?reason:"Radio not saved";render();return;}
  device::prefPutString("mmlora","preset",p.name);markSetupDone();loadRadioDraft(true);
  Serial.printf("WELCOME_DONE preset=%s name=%s bytes=%d\n",p.name,welcomeName.c_str(),welcomeBytes);notice="";welcomeArchive="";screen=Screen::Home;homeSelection=-1;render();}
 // Wi-Fi step: "connect" opens the normal Wi-Fi page (Wi-Fi switched on and a scan started); "skip" goes on.
@@ -2130,6 +2149,7 @@ void setup(){
  if(cleanInstall)markSetup(2);
  if(welcomePending&&sdReady&&!device::prefGetInt("mmsetup","archived",0)){welcomeArchive=archiveSdData();device::prefPutInt("mmsetup","archived",1);}
  else if(!setupMark){markSetupDone();}
+ if(!sdReady){sdProblem=sdDiagnose();Serial.printf("BOOT_SD problem=%s\n",sdProblem.c_str());}
  device::mapTilesBegin(SD,sdReady);
  loadLights();device::powerBegin(displayBrightness,keyboardBrightness);loadChats();loadRegionScopes();loadChannelNotifications();loadVibrations();loadKeyboardLanguages();loadAccentMode();loadWallpaper();loadHomeWidget();loadHomeMain();
  advertGps=device::prefGetInt("mmadvert","gps",0)!=0;
@@ -2141,8 +2161,8 @@ void setup(){
   refreshLastReceived();matter::begin(SD,expander,expanderReady,incomingRadio,deliveredRadio);matter::contactsProtect(contactHasChat);for(auto &scope:regionScopes)matter::registerScope(scope.c_str());configureChannels();}
  device::batteryLoop();device::locationBegin(expander,expanderReady);if(sdReady){device::LocationStore store;store.load=gpsStoreLoad;store.save=gpsStoreSave;device::locationStore(store);}appLinkBegin();device::connectivityBegin();radioLinkBegin();device::weatherBegin();device::otaBegin();epd.epd2.setBusyCallback(serviceWhileDisplayBusy);
  {auto r=matter::snapshot();Serial.printf("RADIO_BOOT ready=%d frequency=%.3f band=%d bw=%.2f sf=%u cr=%u power=%d internal=%d error=%d\n",r.ready,r.config.frequency,matter::radioBand(r.config.frequency),r.config.bandwidth,r.config.sf,r.config.cr,r.config.power,r.internal,r.error);}
- splash(100,sdReady?"Ready for the field.":"SD unavailable / check card");
- if(!sdReady)notice="SD unavailable / check card";
+ splash(100,sdReady?"Ready for the field.":sdProblem.c_str());
+ if(!sdReady)notice=sdProblem;
  if(welcomePending){Serial.printf("FIRST_BOOT clean=%d sd=%d\n",cleanInstall,sdReady);delay(400);startWelcome();handle("status");return;}
  delay(400);render();handle("status");
 }

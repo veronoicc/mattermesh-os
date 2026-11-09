@@ -15,6 +15,15 @@ SET_LOOP_TASK_STACK_SIZE(UI_TASK_STACK_BYTES);
 #include <SPI.h>
 #include <Wire.h>
 #include <SD.h>
+#include "sd_diskio.h"
+#include "board/sd_boot.h"
+#ifndef MM_EMULATOR
+#include <driver/rtc_io.h>
+#endif
+extern "C"{
+#include "ff.h"
+#include "diskio.h"
+}
 #include <Adafruit_TCA8418.h>
 #include "board/board.h"
 #include "board/m9_display.h"
@@ -93,7 +102,8 @@ mm::FastCanvas16 frame(mm::W,mm::H);// RGB565 (ui/fast_canvas.h), presented by c
 int paintedScreen=-1,paintedSection=-1;
 static_assert(mm::W==hw::Lcd::Width&&mm::H==hw::Lcd::Height,"UI must match physical panel");
 hw::Keyboard keyboard;
-bool sdReady=false, keyboardReady=false;
+static sdboot::Result sdBoot;/* where the boot bring-up of the card stopped (board/sd_boot.h) */
+bool sdReady=false, keyboardReady=false;String sdProblem="SD unavailable / check card";/* why the card did not mount (sdDiagnose) */
 static bool batteryLogOn=false;static uint32_t batteryLogAt=0,batteryLogRows=0;// Plus battery log (batteryLogLoop)
 // Cyrillic layouts: a letter key typed into a message (composer or lock-screen quick reply) becomes its ЙЦУКЕН letter;
 // menus, searches and passwords keep the keys.
@@ -1116,6 +1126,22 @@ static String archiveSdData(bool &done){done=true;
  for(const char *dir:{"/mattermesh","/maxchat"})if(SD.exists(dir)){if(SD.rename(dir,base+dir))moved=true;else done=false;}
  Serial.printf("FIRST_BOOT archived=%d to=%s\n",moved,base.c_str());return moved?base:"";
 }
+// The card did not mount: tell an absent card from one the firmware cannot read. FAT32 only (the framework has no exFAT:
+// cards of 64 GB and more come exFAT from the shop). Reads sector 0 only, never writes.
+static String sdDiagnose(){
+ if(sdBoot.stage==sdboot::STAGE_NO_ANSWER)return "No SD card found";
+ if(sdBoot.stage==sdboot::STAGE_INIT_TIMEOUT||sdBoot.stage==sdboot::STAGE_INIT_ERROR||sdBoot.stage==sdboot::STAGE_BAD_CMD8)return "SD card not answering / reinsert it";
+ for(int pin:{BOARD_LORA_CS,BOARD_SD_CS,BOARD_EPD_CS})digitalWrite(pin,HIGH);
+ uint8_t pdrv=sdcard_init(BOARD_SD_CS,&SPI,1000000);if(pdrv==0xFF)return "SD unavailable / check card";
+ String why;if(disk_initialize(pdrv)&STA_NOINIT)why="No SD card found";
+ else{static uint8_t b[512];if(disk_read(pdrv,b,0,1)!=RES_OK)why="SD unreadable / check card";
+  else{auto fs=[&](const uint8_t *at)->String{if(!memcmp(at+3,"EXFAT   ",8))return "exFAT";if(!memcmp(at+3,"NTFS    ",8))return "NTFS";return "";};
+   String kind=fs(b);uint8_t part=b[0x1C2];/* first MBR partition type */
+   if(!kind.length()&&b[510]==0x55&&b[511]==0xAA&&part==0x07){uint32_t lba=b[0x1C6]|b[0x1C7]<<8|b[0x1C8]<<16|uint32_t(b[0x1C9])<<24;kind=disk_read(pdrv,b,lba,1)==RES_OK?fs(b):String("");if(!kind.length())kind="exFAT";}
+   if(!kind.length()&&b[510]==0x55&&b[511]==0xAA&&part==0xEE)kind="GPT";
+   why=kind.length()?"SD is "+kind+": format it FAT32":"SD not FAT32: format it FAT32";
+   Serial.printf("BOOT_SD_DIAG part=0x%02X kind=%s\n",part,kind.c_str());}}
+ sdcard_uninit(pdrv);return why;}
 static void welcomeFillPresets(){welcomeList.clear();for(int p=0;p<matter::RADIO_PRESET_COUNT;p++)if(matter::radioBand(matter::RADIO_PRESETS[p].frequency)==welcomeBand)welcomeList.push_back(p);
  int pick=0;for(int k=0;k<int(welcomeList.size());k++)if(!strcmp(matter::RADIO_PRESETS[welcomeList[k]].name,welcomeBand==868?"EU/UK (Narrow)":welcomeBand==433?"EU 433MHz (Narrow)":"USA")){pick=k;break;}welcomeFocus=pick;}
 void startWelcome(){screen=Screen::Welcome;welcomeStep=0;welcomeWifiChoice=0;welcomeWifi=false;welcomeBand=868;welcomeBytes=matter::OUTGOING_PATH_HASH_BYTES;notice="";
@@ -1124,7 +1150,7 @@ static void finishWelcome(){
  if(welcomeFocus<0||welcomeFocus>=int(welcomeList.size()))return;const auto &p=matter::RADIO_PRESETS[welcomeList[welcomeFocus]];
  auto cfg=matter::snapshot().config;if(matter::radioBand(p.frequency)!=matter::radioBand(cfg.frequency))cfg.power=matter::bandDefaultPower(matter::radioBand(p.frequency),matter::MAX_TX_POWER);/* 433: 10 dBm */
  cfg.frequency=p.frequency;cfg.bandwidth=p.bandwidth;cfg.sf=p.sf;cfg.cr=p.cr;cfg.name=welcomeName;cfg.pathBytes=welcomeBytes;
- String reason;if(!matter::configure(cfg,reason)){notice=reason.length()?reason:"Radio not saved";render();return;}const bool radioOk=matter::snapshot().ready;/* without a radio the setup still ends */
+ String reason;if(!matter::configure(cfg,reason)){notice=!sdReady?sdProblem:reason.length()?reason:"Radio not saved";render();return;}const bool radioOk=matter::snapshot().ready;/* without a radio the setup still ends */
  {Preferences pr;if(pr.begin("mmlora",false)){pr.putString("preset",p.name);pr.end();}}device::prefPutInt("mmsetup","done",1);loadRadioDraft(true);
  Serial.printf("WELCOME_DONE preset=%s name=%s bytes=%d radio=%d%s%s\n",p.name,welcomeName.c_str(),welcomeBytes,radioOk,radioOk?"":" notice=",radioOk?"":reason.c_str());notice=radioOk?"":reason;welcomeArchive="";screen=Screen::Home;homeSelection=-1;render();}
 // Wi-Fi step: "connect" opens the normal Wi-Fi page (Wi-Fi switched on and a scan started); "skip" goes on.
@@ -1135,6 +1161,7 @@ static void welcomeNext(){notice="";
  if(welcomeStep==4){welcomeName.trim();if(!matter::validCompanionName(welcomeName.c_str())){notice="Name required / max 31 bytes";render();return;}}
  if(welcomeStep==7){finishWelcome();return;}welcomeStep++;render();}
 static void welcomeKey(char c){
+ if(c==3){if(welcomeStep>0){welcomeStep--;notice="";render();}return;}/* the BACK key: the previous step (DEL erases the name first) */
  if(c=='\b'){if(welcomeStep==4&&welcomeName.length()){eraseLastCodepoint(welcomeName);render();return;}if(welcomeStep>0){welcomeStep--;notice="";render();}return;}
  if(c=='\n'){welcomeNext();return;}
  if(welcomeStep==4){if(c>=32&&c<=126&&welcomeName.length()<matter::COMPANION_NAME_MAX_BYTES){welcomeName+=c;repaintSettled();}return;}
@@ -1678,21 +1705,64 @@ void splash(int progress,const String &stage){
 static void *tlsCalloc(size_t n,size_t size){void *p=heap_caps_calloc(n,size,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);return p?p:heap_caps_calloc(n,size,MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);}
 static void tlsFree(void *p){heap_caps_free(p);}
 #endif
+/* Peripheral rail on, card woken and initialized, then mounted (board/sd_boot.h). A card that answers but does not
+   mount gets a second round after a pause. Runs before lcd.init: the display, keyboard and radio are still silent, so
+   nothing else is on the bus. No power cut: on the Plus it made boots crash (see sd_boot.h). */
+static uint32_t railOnAt=0;/* millis() when the peripheral rail came back on (keyboard / touch controllers boot from it) */
+static void sdBusUp(uint32_t offMs){
+ sdboot::powerCycle(BOARD_POWERON,BOARD_POWERON_LEVEL,{BOARD_SPI_SCK,BOARD_SPI_MOSI,BOARD_LORA_CS,BOARD_SD_CS,BOARD_EPD_CS,BOARD_TFT_DC,BOARD_LORA_RST},offMs);railOnAt=millis();
+ for(int pin:{BOARD_LORA_CS,BOARD_SD_CS,BOARD_EPD_CS}){pinMode(pin,OUTPUT);digitalWrite(pin,HIGH);}
+ SPI.begin(BOARD_SPI_SCK,BOARD_SPI_MISO,BOARD_SPI_MOSI);
+ gpio_set_pull_mode(gpio_num_t(BOARD_SPI_MISO),GPIO_PULLUP_ONLY);/* a missing card reads 0xFF, not noise */
+ /* The radio held in reset, then released: an idle LR1110 keeps MISO free while the card is brought up. */
+ pinMode(BOARD_LORA_BUSY,INPUT);pinMode(BOARD_LORA_RST,OUTPUT);digitalWrite(BOARD_LORA_RST,LOW);delay(2);digitalWrite(BOARD_LORA_RST,HIGH);
+ {uint32_t t0=millis();while(digitalRead(BOARD_LORA_BUSY)==HIGH&&millis()-t0<300)delay(1);}
+}
+static bool sdMountLadder(bool cardAnswered){
+ /* After ready() a card mounts at the first try; the ladder covers clocks the bus does not hold (2 MHz on some M9). */
+ static const struct{uint16_t settle;uint32_t hz;}ladder[]={{5,4000000},{100,4000000},{150,2000000},{250,2000000},{400,1000000},{600,400000},{900,400000}};
+ const int tries=cardAnswered?7:2;uint32_t mountedHz=0;bool ok=false;
+ for(int i=0;i<tries&&!ok;i++){SD.end();delay(ladder[i].settle);for(int pin:{BOARD_LORA_CS,BOARD_SD_CS,BOARD_EPD_CS})digitalWrite(pin,HIGH);
+  ok=SD.begin(BOARD_SD_CS,SPI,ladder[i].hz,"/sd",5,false)&&SD.cardType()!=CARD_NONE;Serial.printf("BOOT_SD frequency=%lu mounted=%d\n",(unsigned long)ladder[i].hz,ok);
+  if(ok)mountedHz=ladder[i].hz;}
+ if(ok&&mountedHz<4000000){SD.end();delay(60);ok=SD.begin(BOARD_SD_CS,SPI,4000000,"/sd",5,false)&&SD.cardType()!=CARD_NONE;
+  if(!ok){SD.end();delay(120);ok=SD.begin(BOARD_SD_CS,SPI,mountedHz,"/sd",5,false)&&SD.cardType()!=CARD_NONE;}else mountedHz=4000000;
+  Serial.printf("BOOT_SD renegotiated=%lu mounted=%d\n",(unsigned long)mountedHz,ok);}
+ if(!ok)SD.end();
+ return ok;
+}
+static void sdBringUp(uint32_t offMs){
+ const uint32_t t0=millis();
+ for(int round=0;round<2;round++){
+  if(round){SD.end();SPI.end();delay(300);Serial.println("BOOT_SD second round");}
+  sdBusUp(offMs);
+  sdboot::wake(SPI,BOARD_SD_CS);
+  sdBoot=sdboot::ready(SPI,BOARD_SD_CS);
+#ifdef MM_EMULATOR
+  sdReady=sdMountLadder(true);
+#else
+  sdReady=sdMountLadder(sdBoot.stage!=sdboot::STAGE_NO_ANSWER);
+#endif
+  if(sdReady||sdBoot.stage==sdboot::STAGE_NO_ANSWER)break;/* no card: a second cut would not make one appear */
+ }
+ Serial.printf("BOOT_SD done mounted=%d stage=%s ms=%lu\n",sdReady,sdboot::stageName(sdBoot.stage),(unsigned long)(millis()-t0));
+}
 void setup(){
  // Read before anything below writes the NVS: an empty one means a clean flash (see archiveSdData).
  const int setupMark=device::prefGetInt("mmsetup","done",0);const bool cleanInstall=!setupMark&&nvsEmpty();
 #ifndef MM_EMULATOR
  mbedtls_platform_set_calloc_free(tlsCalloc,tlsFree);
 #endif
- pinMode(BOARD_POWERON,OUTPUT);digitalWrite(BOARD_POWERON,BOARD_POWERON_LEVEL);// LCD, LoRa, GPS and keyboard power
  Serial.setTxBufferSize(16384);Serial.setRxBufferSize(2*SD_TRANSFER_CHUNK+512);Serial.begin(115200);/* RX queue holds two `sd put` chunks plus commands; never resized after begin */delay(800);device::wdtTraceBegin();
- for(int pin:{BOARD_LORA_CS,BOARD_SD_CS,BOARD_EPD_CS}){pinMode(pin,OUTPUT);digitalWrite(pin,HIGH);}
- // Shared SPI: every device retains its own chip select and transaction settings.
- SPI.begin(BOARD_SPI_SCK,BOARD_SPI_MISO,BOARD_SPI_MOSI);
- // The first T-Deck has no pull-up on the shared MISO line: without it the SX1262 may not answer at boot ("Radio
- // unavailable"). Set after SPI.begin, which reconfigures the pin (LilyGO examples and WADAMESH pull it up too).
- gpio_set_pull_mode(gpio_num_t(BOARD_SPI_MISO),GPIO_PULLUP_ONLY);
+#ifndef MM_EMULATOR
+ /* Holds left by a deep sleep survive every reset short of the power slider and make pinMode/digitalWrite silent no-ops. */
+ rtc_gpio_hold_dis(gpio_num_t(BOARD_POWERON));rtc_gpio_hold_dis(gpio_num_t(BOARD_EPD_BL));gpio_deep_sleep_hold_dis();gpio_hold_dis(gpio_num_t(BOARD_LORA_CS));
+#endif
+ /* The card is brought up and mounted before the display, the keyboard or the radio say a word (board/sd_boot.h). */
+ sdBringUp(0);
  lcd.init();analogWrite(BOARD_EPD_BL,100);splash(0,"Initializing mesh services...");
+ /* The keyboard and touch controllers had 800 ms from power-on before the card bring-up moved in front: keep them. */
+ while(millis()-railOnAt<800)delay(5);
  pinMode(BOARD_I2C_SDA,INPUT_PULLUP);pinMode(BOARD_I2C_SCL,OUTPUT_OPEN_DRAIN);digitalWrite(BOARD_I2C_SCL,HIGH);
  if(digitalRead(BOARD_I2C_SDA)==LOW){
   for(int i=0;i<9;i++){digitalWrite(BOARD_I2C_SCL,LOW);delayMicroseconds(10);digitalWrite(BOARD_I2C_SCL,HIGH);delayMicroseconds(10);}
@@ -1710,15 +1780,7 @@ void setup(){
   if(lastAt&&uint32_t(now-lastAt)<3600000UL){int64_t expected=int64_t(lastEpoch)+(now-lastAt)/1000;if(llabs(int64_t(e)-expected)<=2)return;}
   bool ok=hw::rtcWrite(e);if(ok){lastEpoch=e;lastAt=now;}Serial.printf("RTC_STORE ok=%d epoch=%lu\n",ok,(unsigned long)e);};
  device::timeSyncBegin(uint32_t(time(nullptr)));splash(55,"Loading device services...");
- // A cold card can miss its first initialization on the shared SPI bus.
- // Retry before any data-dependent service starts, without formatting the card.
- for(uint32_t frequency:{4000000u,2000000u,1000000u}){
-  for(int pin:{BOARD_LORA_CS,BOARD_SD_CS,BOARD_EPD_CS})digitalWrite(pin,HIGH);
-  sdReady=SD.begin(BOARD_SD_CS,SPI,frequency,"/sd",5,false);
-  Serial.printf("BOOT_SD frequency=%lu mounted=%d\n",frequency,sdReady);
-  if(sdReady)break;
-  SD.end();delay(150);
- }
+ if(!sdReady){sdProblem=sdDiagnose();Serial.printf("BOOT_SD problem=%s stage=%s\n",sdProblem.c_str(),sdboot::stageName(sdBoot.stage));}
  device::mapTilesBegin(SD,sdReady);
  if(cleanInstall)device::prefPutInt("mmsetup","done",2);
  // mmsetup/archived: 0 from a clean install until the old data is moved (retried at every boot, also after the welcome,
@@ -1736,8 +1798,8 @@ void setup(){
  {device::BatteryLoad boot;boot.active=true;boot.cpuHigh=true;device::batteryLoad(boot);}// screen on at boot: the first sample is taken under load
  device::batteryLoop();device::locationBegin();appLinkBegin();device::linkBegin();device::connectivityBegin();radioLinkBegin();device::weatherBegin();device::stormBegin();device::radarBegin();device::otaBegin();
  {auto r=matter::snapshot();Serial.printf("RADIO_BOOT ready=%d frequency=%.3f band=%d bw=%.2f sf=%u cr=%u power=%d error=%d chip=%s\n",r.ready,r.config.frequency,matter::radioBand(r.config.frequency),r.config.bandwidth,r.config.sf,r.config.cr,r.config.power,r.error,r.error==-2?"none":MM_RADIO_CHIP);/* -2: RadioLib chip not found */Serial.printf("RADIO_TCXO %.1f\n",matter::radioDiag().tcxo);}
- splash(100,sdReady?"Ready for the field.":"SD unavailable / check card");
- if(!sdReady)notice="SD unavailable / check card";
+ splash(100,sdReady?"Ready for the field.":sdProblem.c_str());
+ if(!sdReady)notice=sdProblem;
  // Clean install (mark 2) -> welcome. Without a mark (set up before the mark existed): radio settings on the SD mean
  // the device is set up, otherwise the welcome runs.
  {int mark=device::prefGetInt("mmsetup","done",0);if(mark==2||(!mark&&!(sdReady&&SD.exists("/mattermesh/radio.conf"))))
