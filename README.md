@@ -1,18 +1,14 @@
 # MatterMesh OS
 
-An alternative firmware for the LilyGO **T-Deck Plus** and **T-Deck Max**, built on [MeshCore](https://github.com/meshcore-dev/MeshCore):
+An alternative firmware for the LilyGO **T-Deck Max**, built on [MeshCore](https://github.com/meshcore-dev/MeshCore):
 off-grid LoRa chat with a real keyboard, designed for use in the field.
 
 **Website and browser installer: [mattermeshos.com](https://mattermeshos.com)** — install it on your T-Deck from Chrome or Edge, no tools needed.
 
 <table>
 <tr>
-<td align="center"><img src="docs/images/plus-lock.png" width="400" alt="T-Deck Plus lock screen"><br><b>T-Deck Plus</b> · lock screen</td>
 <td align="center"><img src="docs/images/max-lock.png" width="280" alt="T-Deck Max lock screen"><br><b>T-Deck Max</b> · lock screen</td>
-</tr>
-<tr>
-<td align="center"><img src="docs/images/plus-chat.png" width="400" alt="T-Deck Plus chat"><br>Chat in two languages (Plus)</td>
-<td align="center"><img src="docs/images/max-chat.png" width="280" alt="T-Deck Max chat"><br>Chat in two languages (Max)</td>
+<td align="center"><img src="docs/images/max-chat.png" width="280" alt="T-Deck Max chat"><br>Chat in two languages</td>
 </tr>
 </table>
 
@@ -20,21 +16,17 @@ This repository holds the source of the **Free edition**, released under the GNU
 
 | Folder | Device | Display |
 |---|---|---|
-| [`tdeck-plus/`](tdeck-plus) | T-Deck Plus (ESP32-S3, SX1262 or SX1268; 433, 868 and 915 MHz) | 320×240 colour LCD, touch |
 | [`tdeck-max/`](tdeck-max) | T-Deck Max (ESP32-S3, SX1262) | 240×320 e-paper, touch |
-| [`thinknode-m9/`](thinknode-m9) | Elecrow ThinkNode M9 (ESP32-S3, LR1110) | 320×240 colour LCD, keyboard and D-pad, no touch: the whole UI is reachable with the arrows and OK |
 
-The devices are separate code bases (different screens, input and power management); they share the
-MeshCore companion protocol, so they work with the MeshCore apps and with every other MeshCore node.
+It speaks the MeshCore companion protocol, so it works with the MeshCore apps and with every other MeshCore node.
 
 ## What's in the Free edition
 
-- Channel and direct chats, contacts, emoji, mentions and quick replies; themes and lock screens (Plus), wallpapers (Max)
+- Channel and direct chats, contacts, emoji, mentions and quick replies; wallpapers
 - **Keyboard languages**: Italian, English, German, French, Spanish, Portuguese, Russian and Ukrainian (Settings → Keyboard languages, with search). Alt + Space switches between the enabled languages and the one in use shows in the status bar; the accent key, tapped before a letter, types the letters without a key of their own
 - MeshCore companion over Bluetooth, USB and Wi-Fi
-- **433 MHz networks fully supported on the T-Deck Plus** (the 433 MHz version, SX1262 or SX1268): EU 433 and Portugal 433 presets, 10 dBm default power on 433, alongside the 868 MHz (Europe) and 915 MHz (Americas, Australia) networks
-- Apps: **Maps** (OpenStreetMap tiles with GPS), **Weather** (Open-Meteo; on the Plus also radar and storm alerts), **Files**, **CLI**
-- On the Max: offline Italian dictation (the speech model is loaded from the SD card and is distributed separately)
+- Apps: **Maps** (OpenStreetMap tiles with GPS), **Weather** (Open-Meteo), **Files**, **CLI**
+- Offline Italian dictation (the speech model is loaded from the SD card and is distributed separately)
 
 ## Build
 
@@ -42,15 +34,13 @@ Requirements: [PlatformIO Core](https://platformio.org/install/cli), git, a C++1
 
 ```sh
 scripts/fetch-deps.sh                 # MeshCore companion-v1.18.0 and the LilyGO T-Deck-MAX libraries, pinned and patched
-cd tdeck-plus && pio run -e tdeck-plus-free          # T-Deck Plus
-cd tdeck-max  && pio run -e mattermesh-free          # T-Deck Max
-cd thinknode-m9 && pio run -e thinknode-m9-free     # ThinkNode M9
+cd tdeck-max && pio run -e mattermesh-free          # T-Deck Max
 ```
 
 Flash the app image at `0x10000` (for example `esptool.py write-flash 0x10000 .pio/build/<env>/firmware.bin`).
-Host tests: `bash tools/test_release.sh` in either folder. The Plus folder also contains a PC emulator (`emu/`, see its README).
+Host tests: `bash tools/test_release.sh` in `tdeck-max/`. The folder also contains a PC emulator (`emu/`, see its README).
 
-The emoji fonts live once in `shared/fonts/` and are symlinked into both trees; they are only needed to regenerate
+The emoji fonts live once in `shared/fonts/` and are symlinked into the tree; they are only needed to regenerate
 the emoji bitmaps (`tools/make_color_emoji.py`, `tools/build_emoji_assets.py`), not to build. On Windows clone with
 `git clone -c core.symlinks=true` (or build on Linux/macOS).
 
@@ -61,21 +51,6 @@ official images.
 
 MatterMesh OS is free and has no ads. If you find it useful, you can support it with a donation of any amount at
 [ko-fi.com/mattermeshos](https://ko-fi.com/mattermeshos) — on the device: Settings → Donate / Unlock.
-
-## Download
-
-Ready-to-flash **Free** image for the **T-Deck Plus**, always the latest release:
-
-**[mattermesh-os.bin](https://mattermeshos.com/firmware/plus/mattermesh-os.bin)** — copy it to the SD card and install it from
-[bmorcelli's Launcher](https://github.com/bmorcelli/Launcher), or flash it at `0x10000` with esptool.
-
-Tested with Launcher 2.9.1 on the T-Deck Plus (install from the SD card, signed updates saved to the SD card and
-installed from the Launcher). MatterMesh OS has no agreement or affiliation with the Launcher project: it has only been
-tested with it.
-
-A first install without the Launcher needs the bootloader and partition table too: the easiest way is the browser
-installer at [mattermeshos.com](https://mattermeshos.com), which writes everything (Chrome or Edge, USB-C data cable).
-Later updates arrive signed over Wi-Fi: Settings → OTA update.
 
 ## License
 
