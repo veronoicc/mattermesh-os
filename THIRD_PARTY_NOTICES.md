@@ -37,6 +37,7 @@ license texts that ship with the bundled assets are kept next to them.
 | QR Code generator (C) | `*/src/qr/` | MIT, Project Nayuki |
 | QuartzNet model definition (dictation reference) | `*/tools/offline_it/reference_model*.py` | MIT, see `REFERENCE-LICENSE.txt` |
 | QuartzNet architecture (dictation, `tdeck-max/src/offline_it/`) | NVIDIA NeMo | Apache-2.0 |
+| NeMo checkpoint exporter (`tdeck-max/tools/offline_asr/`) | reads NVIDIA NeMo `.nemo` archives with PyTorch / PyYAML | the checkpoints (`stt_en_quartznet15x5`, `stt_de_quartznet15x5`) are downloaded by the user under the NGC terms of use and are not distributed here |
 | Inter | `*/assets/fonts/inter/` | SIL OFL 1.1 |
 | Liberation Sans | `*/assets/fonts/` | SIL OFL 1.1 |
 | Noto Color Emoji, Noto Emoji | `shared/fonts/` (linked from the tree) | SIL OFL 1.1 |

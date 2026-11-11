@@ -25,12 +25,29 @@ for test in degrees lock_wallpaper hold_banner todo_text lora_connectivity gps_s
   g++ "${ui_flags[@]}" "sim/test_${test}.cpp" artifacts/release-tests/components.o artifacts/release-tests/artwork.o artifacts/release-tests/renderer.o artifacts/release-tests/gfx.o artifacts/release-tests/qrcodegen.o -o "artifacts/release-tests/${test}"
   "artifacts/release-tests/${test}"
 done
-# Dictation engine actually shipped (asr2, MMQIT002) on the deployed packed 6-bit model, when present.
+# Dictation language: pure policy (ids, SD paths, labels, German UTF-8) and the Sound / dictation page layout.
+g++ -std=c++17 -O2 -Isrc sim/test_dictation_language.cpp -o artifacts/release-tests/dictation_language
+artifacts/release-tests/dictation_language
+g++ "${ui_flags[@]}" sim/test_dictation_settings_ui.cpp artifacts/release-tests/components.o artifacts/release-tests/artwork.o artifacts/release-tests/renderer.o artifacts/release-tests/gfx.o artifacts/release-tests/qrcodegen.o -o artifacts/release-tests/dictation_settings_ui
+artifacts/release-tests/dictation_settings_ui
+# Dictation engine actually shipped (asr2, MMQIT002) on every model present: the deployed packed 6-bit Italian model and the
+# exported English / German ones (tools/offline_asr), the latter also on real speech clips (tools/offline_asr/fetch_samples.py).
 model="${MM_QN15_Q6:-artifacts/offline-it/qn15/export/qn15-it-q6.mmq}"
-if [ -f "$model" ]; then
-  g++ -std=c++14 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -pthread -Isrc \
-    src/offline_it/asr2.cpp sim/test_asr2.cpp -o artifacts/release-tests/asr2-sanitized
-  ASAN_OPTIONS=detect_leaks=1 artifacts/release-tests/asr2-sanitized "$model"
-else
-  echo "SKIP asr2: no model at $model"
-fi
+models=("$model" artifacts/offline-asr/asr-en.mmq artifacts/offline-asr/asr-de.mmq)
+built=0
+shopt -s nullglob
+for model in "${models[@]}"; do
+  if [ -f "$model" ]; then
+    if [ "$built" = 0 ]; then
+      g++ -std=c++14 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -pthread -Isrc \
+        src/offline_it/asr2.cpp sim/test_asr2.cpp -o artifacts/release-tests/asr2-sanitized
+      built=1
+    fi
+    lang="$(basename "$model" .mmq)"; clips=(artifacts/offline-asr/samples/"${lang#asr-}"-*.wav)
+    ASAN_OPTIONS=detect_leaks=1 artifacts/release-tests/asr2-sanitized "$model" "${clips[@]}"
+  else
+    echo "SKIP asr2: no model at $model"
+  fi
+done
+# Exporter numerics (bit packing, quantization, BatchNorm folding); needs the project venv of tools/offline_asr.
+if [ -x tools/offline_asr/.venv/bin/python ]; then (cd tools/offline_asr && .venv/bin/python test_export.py); else echo "SKIP export_nemo self-check: no tools/offline_asr/.venv"; fi

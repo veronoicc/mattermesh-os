@@ -34,6 +34,7 @@ struct State {
  int vibrationPercent=75;
  bool displayLightEnabled=true,keyboardLightEnabled=true;
  bool audioTranscribing=false,offlineEngineCompiled=false;int audioSeconds=0;bool audioReady=false,audioNotifications=true,audioRecording=false,audioWarming=false;int audioVolume=20;std::string audioMessage;
+int dictationLanguage=2;uint32_t dictationModelBytes=0;// Sound / dictation: selected language (services/dictation_language.h) and the size of its model file on the SD card (0: absent)
  Page page=Page::Home;Status status;
  // MeshCore app link: BLE name / PIN, Wi-Fi (TCP 5000) switch and address, which links are in use.
  std::string appBleName,appPin,appWifiDetail,appBleInput;bool appBleEditing=false,appWifi=false,appBleLinked=false,appUsbLinked=false,appWifiLinked=false,appRemoteCli=false;

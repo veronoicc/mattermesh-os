@@ -27,7 +27,7 @@ It speaks the MeshCore companion protocol, so it works with the MeshCore apps an
 - MeshCore companion over Bluetooth, USB and Wi-Fi
 - Full MeshCore companion protocol v14: repeater login and admin console, status, telemetry, trace path (ping), path discovery, signing, flood scopes, stats and tuning, and client repeat mode (Settings → LoRa → Device). Private key import and export stay off unless built with `-D ENABLE_PRIVATE_KEY_EXPORT=1 -D ENABLE_PRIVATE_KEY_IMPORT=1`, as in MeshCore
 - Apps: **Maps** (OpenStreetMap tiles with GPS), **Weather** (Open-Meteo), **Files**, **CLI**
-- Offline Italian dictation (the speech model is loaded from the SD card and is distributed separately)
+- Offline dictation in English, German and Italian (hold MIC; the speech model of the language chosen in Settings → Sound / dictation is loaded from the SD card and is distributed separately, see [Offline dictation models](#offline-dictation-models))
 
 ## Build
 
@@ -47,6 +47,33 @@ the emoji bitmaps (`tools/make_color_emoji.py`, `tools/build_emoji_assets.py`), 
 
 Builds made from this repository have no update server configured: over-the-air updates are only offered by the
 official images.
+
+## Offline dictation models
+
+Dictation runs on the device with a QuartzNet-15x5 CTC model per language, read from the SD card as `/mattermesh/asr-en.mmq`,
+`/mattermesh/asr-de.mmq` or `/mattermesh/asr-it.mmq`. Settings → Sound / dictation → Dictation picks the language
+(`< English | Deutsch | Italiano >`, tap the card or press `A` / `D`) and shows whether its file is on the card and how large it is.
+The recording limit stays 6 s; one dictation needs about 2.9 MB of PSRAM (1.9 MB work area + two 0.5 MB model buffers) whatever the language.
+
+Make the English and German models from NVIDIA's public NeMo checkpoints (about 70 MB download each, needs Python 3 on the host; the
+export uses plain PyTorch, not the NeMo toolkit):
+
+```sh
+cd tdeck-max/tools/offline_asr
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt     # project-local environment
+mkdir -p ../../artifacts/offline-asr && cd ../../artifacts/offline-asr
+for l in en de; do curl -fSL -o stt_${l}_quartznet15x5.nemo \
+  https://api.ngc.nvidia.com/v2/models/nvidia/nemo/stt_${l}_quartznet15x5/versions/1.0.0rc1/files/stt_${l}_quartznet15x5.nemo; done
+for l in en de; do ../../tools/offline_asr/.venv/bin/python ../../tools/offline_asr/export_nemo.py stt_${l}_quartznet15x5.nemo asr-$l.mmq; done
+```
+
+Copy `asr-en.mmq` and `asr-de.mmq` to `/mattermesh/` on the SD card (about 15.3 MB each; `--bits 8` makes a 19.5 MB file that is
+closer to the float model). The Italian model is installed the same way as before. Check the result on the host with
+`tools/offline_asr/fetch_samples.py` (public speech clips) and `tools/offline_asr/compare.py` (float reference against the
+firmware engine); `tools/test_release.sh` runs the engine on every `asr-*.mmq` it finds under `artifacts/offline-asr/`.
+The checkpoints are NVIDIA's (NGC `nvidia/nemo`, [terms of use](https://ngc.nvidia.com/legal/terms)); trained on LibriSpeech,
+Mozilla Common Voice and others, they are not re-distributed here. An optional flash copy of the Italian model (`asr_it` partition)
+is ignored for the other languages.
 
 ## Support
 

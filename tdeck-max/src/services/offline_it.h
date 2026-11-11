@@ -10,7 +10,8 @@ bool offlineItalianReload();
 void offlineItalianDebug(int cores,int trace);
 // Prints OFFLINE_IT_BENCH: int8 dot and pointwise block timings with operands in internal RAM vs PSRAM.
 OfflineItalianMetrics offlineItalianMetrics();
-int offlineItalianTranscribe(const int16_t *pcm,size_t samples,std::atomic<bool> &cancel,String &text);
+// language: index into DICTATION_LANGUAGES (services/dictation_language.h); the model is read from its SD path.
+int offlineItalianTranscribe(const int16_t *pcm,size_t samples,std::atomic<bool> &cancel,String &text,int language);
 String offlineItalianMessage();
-// SD path of the MMQIT002 model streamed by the engine.
+// The model file of each language is /mattermesh/asr-<lang>.mmq (dictationModelPath).
 }

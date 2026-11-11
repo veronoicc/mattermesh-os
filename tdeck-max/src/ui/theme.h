@@ -145,10 +145,10 @@ inline Rect wallpaperCardRect(int index){return {Margin+index*76,Top+20,72,68};}
 constexpr int WallpaperInfoY=Top+100;
 inline Rect powerRowRect(int index){return {Margin,Top+22+index*47,W-2*Margin,43};}
 inline Rect timeoutOptionRect(int index){return {Margin+index*38,Top+138,34,28};}
-// Sound page: switch, volume row (- slider +), message / mention ringtone rows, dictation card.
+// Sound page: switch, volume row (- slider +), message / mention ringtone rows, dictation card (engine, < language >, model on SD).
 constexpr Rect AudioNotify=SettingsSwitch,AudioMinus={Margin,Top+70,36,28},AudioSlider={Margin+42,Top+70,W-2*Margin-84,28},AudioPlus={W-Margin-36,Top+70,36,28};
-constexpr Rect AudioToneMessage={Margin,Top+124,W-2*Margin,36},AudioToneMention={Margin,Top+164,W-2*Margin,36};
-constexpr Rect AudioBackend={Margin,Top+226,W-2*Margin,34};
+constexpr Rect AudioToneMessage={Margin,Top+120,W-2*Margin,36},AudioToneMention={Margin,Top+158,W-2*Margin,36};
+constexpr Rect AudioBackend={Margin,Top+214,W-2*Margin,46};
 constexpr Rect SaveButton={Margin,FormActionsY,(W-3*Margin)/2,30};
 constexpr Rect CancelButton={W/2+Margin/2,FormActionsY,(W-3*Margin)/2,30};
 constexpr int ReceivedMessageActions=5;

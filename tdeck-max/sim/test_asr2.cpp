@@ -2,6 +2,7 @@
 // cancellation, blob failure, two-core parity and streamed-vs-direct parity.
 #include "offline_it/asr2.h"
 #include "offline_it/blob_stream.h"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -32,9 +33,9 @@ struct Threads {std::thread t;};
 static bool forkT(void *c,void (*job)(void*),void *arg){static_cast<Threads*>(c)->t=std::thread(job,arg);return true;}
 static void joinT(void *c){auto *t=static_cast<Threads*>(c);if(t->t.joinable())t->t.join();}
 int main(int argc,char **argv){
- assert(argc==2&&kernelSelfTest());
+ assert(argc>=2&&kernelSelfTest());
  std::ifstream f(argv[1],std::ios::binary);std::vector<uint8_t> file((std::istreambuf_iterator<char>(f)),{});assert(file.size()>10000000);
- Model model;assert(openFrom(file,model)==Ok&&model.dtype==1&&model.ops>100&&model.classes==39&&model.blank==38);
+ Model model;assert(openFrom(file,model)==Ok&&model.dtype==1&&model.ops>100&&model.classes>=29&&model.blank==model.classes-1);const bool italian=model.classes==39;   // 39: Italian, 29: English, 32: German (blank is the last class)
  // every op record carries the CRC of its blob
  for(unsigned i=0;i<model.ops;i++){const Op &o=model.op[i];assert(crc32(file.data()+o.blobOffset,o.storedBytes)==o.crc);}
  {auto bad=file;bad[5]^=1;assert(openFrom(bad,model)!=Ok);}                                  // magic
@@ -59,7 +60,7 @@ int main(int argc,char **argv){
  assert(stats.opsDone==model.ops&&stats.frames==frames&&direct.served==model.ops&&stats.workspaceBytes==bytes);
  for(int i=0;i<33;i++)assert(guarded[i]==0xab&&guarded[guarded.size()-1-i]==0xab);
  for(int i=0;i<16;i++)assert(uint8_t(scratch[i])==0xab&&uint8_t(scratch[sizeof(scratch)-1-i])==0xab);
- const std::string directText=text;std::cout<<"direct: '"<<directText<<"' macs "<<stats.macs<<" arena "<<bytes<<"\n";assert(!directText.empty());
+ const std::string directText=text;std::cout<<"direct: '"<<directText<<"' macs "<<stats.macs<<" arena "<<bytes<<"\n";if(italian)assert(!directText.empty());   // tones are not speech: only the Italian model is expected to emit letters for them
  // arena / scratch guards
  assert(transcribe(model,pcm.data(),samples,nullptr,0,text,sizeof(text),stats,hooks)==NoMemory);
  assert(transcribe(model,pcm.data(),samples,guarded.data()+33,bytes-1,text,sizeof(text),stats,hooks)==NoMemory);
@@ -105,5 +106,19 @@ int main(int argc,char **argv){
   assert(transcribe(model,pcm.data(),samples,guarded.data()+33,bytes,text,sizeof(text),stats,h)==BlobUnavailable);stream.finish();}
  // silence yields an empty hypothesis
  {std::vector<int16_t> quiet(samples,0);assert(transcribe(model,quiet.data(),samples,guarded.data()+33,bytes,text,sizeof(text),stats,hooks)==Ok&&!text[0]);}
+ // real speech (optional clips X.wav with reference text X.txt after the model): the quantized engine must read it back
+ if(argc>2){size_t errors=0,total=0;
+  for(int a=2;a<argc;a++){
+   std::string path=argv[a];std::ifstream w(path,std::ios::binary);std::vector<uint8_t> wav((std::istreambuf_iterator<char>(w)),{});assert(wav.size()>44&&!memcmp(wav.data(),"RIFF",4));
+   size_t at=12;while(at+8<=wav.size()&&memcmp(wav.data()+at,"data",4))at+=8+get32(wav,at+4)+(get32(wav,at+4)&1);assert(at+8<=wav.size());
+   std::vector<int16_t> clip((wav.size()-at-8)/2);memcpy(clip.data(),wav.data()+at+8,clip.size()*2);assert(clip.size()>=16000&&clip.size()<=size_t(16000)*6);   // the device records at most 6 s
+   std::vector<uint8_t> arena(workspaceBytes(model,clip.size())+64);char heard[512];Direct d{file.data(),file.size()};Hooks h=hooks;h.context=&d;
+   assert(transcribe(model,clip.data(),clip.size(),arena.data(),arena.size(),heard,sizeof(heard),stats,h)==Ok);
+   std::ifstream r(path.substr(0,path.size()-3)+"txt");std::string truth((std::istreambuf_iterator<char>(r)),{});
+   auto letters=[](const std::string &s){std::string o;bool gap=false;for(unsigned char c:s){if(c=='-'||c==' '||c=='\n'||c=='\r'){gap=true;continue;}if(c=='.')continue;if(c>='A'&&c<='Z')c+=32;if(gap&&!o.empty())o+=' ';gap=false;o+=char(c);}return o;};
+   std::string want=letters(truth),got=letters(heard);std::vector<size_t> row(got.size()+1);for(size_t j=0;j<row.size();j++)row[j]=j;
+   for(size_t i=1;i<=want.size();i++){size_t prev=row[0];row[0]=i;for(size_t j=1;j<=got.size();j++){size_t keep=row[j];row[j]=std::min({row[j]+1,row[j-1]+1,prev+(want[i-1]!=got[j-1])});prev=keep;}}
+   errors+=row[got.size()];total+=want.size();std::cout<<path<<"\n  heard: "<<heard<<"\n  truth: "<<want<<"\n";}
+  double cer=double(errors)/double(total);std::cout<<"character error rate on "<<argc-2<<" clips: "<<100*cer<<"%\n";assert(cer<0.35);}   // bytes, so one umlaut counts twice; a dead or broken engine scores ~100%
  std::cout<<"PASS: MMQIT002 validation, guards, cancellation, blob failure, two-core and streamed parity\n";
 }

@@ -5,6 +5,7 @@ chat-demo.pbm
 hardware/
 meshcore-base/
 datasets/offline-it/
+tools/offline_asr/.venv/
 # Build outputs and flash images (rebuilt from source; may embed device data)
 artifacts/
 build-reports/

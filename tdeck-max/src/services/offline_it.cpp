@@ -1,10 +1,12 @@
-// Offline Italian dictation adapter, engine v2 (MMQIT002, QuartzNet-15x5 class models).
-// The model lives on the SD card and is streamed one operator at a time through two
-// PSRAM staging buffers (one-ahead prefetch on a dedicated task). An optional copy of
+// Offline dictation adapter (Italian, English, German), engine v2 (MMQIT002, QuartzNet-15x5 class models).
+// The model of the selected language (/mattermesh/asr-<lang>.mmq) lives on the SD card and is streamed one operator at a
+// time through two PSRAM staging buffers (one-ahead prefetch on a dedicated task). An optional copy of
 // the file's first bytes in the `asr_it` flash partition serves those operators by
-// pointer, verified once per boot with the per-blob CRCs. Second core via the helper task.
+// pointer, verified once per boot with the per-blob CRCs; it is used only while the SD file's header is byte-identical
+// to it (the partition holds one model: any other language reads everything from SD). Second core via the helper task.
 #include "offline_it.h"
 #include "dictation_policy.h"
+#include "dictation_language.h"
 #include "psram.h"
 #include <algorithm>
 #if defined(MM_OFFLINE_ITALIAN) && MM_OFFLINE_ITALIAN
@@ -21,7 +23,7 @@ static_assert(device::DICTATION_RATE==mm_asr::SampleRate && device::DICTATION_MA
 #endif
 namespace device {
 namespace {
-const char *MODEL_PATH="/mattermesh/asr-it.mmq";
+std::atomic<int> lastLanguage{DICTATION_LANGUAGE_DEFAULT};
 std::atomic<uint32_t> modelBytes{0},workspaceBytes{0},elapsedMs{0},progress{0};std::atomic<uint64_t> macs{0};std::atomic<int> lastError{0};std::atomic<bool> modelReady{false},busy{false};
 std::atomic<uint32_t> stage{0},opIndex{0},stackMin{0},internalMin{0},psramMin{0},loadMs{0},featuresMs{0},lastOpMs{0},maxOpMs{0},depthwiseMs{0},pointwiseMs{0},cores{0};
 std::atomic<uint32_t> modelOps{0},residentOps{0},prefixBytes{0},sdBytes{0},sdReadMs{0},sdWaitMs{0},sdReads{0},prefetchHits{0};
@@ -30,7 +32,8 @@ void offlineItalianReset(){modelBytes=workspaceBytes=elapsedMs=progress=0;macs=0
 OfflineItalianMetrics offlineItalianMetrics(){OfflineItalianMetrics m;m.compiled=OFFLINE_ITALIAN_COMPILED;m.modelReady=modelReady;m.modelBytes=modelBytes;m.workspaceBytes=workspaceBytes;m.elapsedMs=elapsedMs;m.progress=progress;m.macs=macs;m.error=lastError;m.stage=stage;m.op=opIndex;m.stackMin=stackMin;m.internalMin=internalMin;m.psramMin=psramMin;m.loadMs=loadMs;m.featuresMs=featuresMs;m.lastOpMs=lastOpMs;m.maxOpMs=maxOpMs;m.depthwiseMs=depthwiseMs;m.pointwiseMs=pointwiseMs;m.cores=cores;m.modelOps=modelOps;m.residentOps=residentOps;m.prefixBytes=prefixBytes;m.sdBytes=sdBytes;m.sdReadMs=sdReadMs;m.sdWaitMs=sdWaitMs;m.sdReads=sdReads;m.prefetchHits=prefetchHits;return m;}
 #if defined(MM_OFFLINE_ITALIAN) && MM_OFFLINE_ITALIAN
 namespace {
-// ---- cached model (parsed once per boot, or until reload) ----------------------------
+// ---- cached model (parsed once per boot, or until reload or a language change) ---------
+static int cachedLanguage=-1;
 // The model table (~17 KB) lives in PSRAM, allocated on first use: internal RAM stays free for TLS and BLE.
 static mm_asr::Model &asrModel(){static mm_asr::Model *m=nullptr;if(!m){m=static_cast<mm_asr::Model*>(psramCalloc(1,sizeof(mm_asr::Model)));}return *m;}static bool cachedValid=false;static uint8_t cachedHeader[mm_asr::HeaderBytes];
 static const uint8_t *prefix=nullptr;static spi_flash_mmap_handle_t prefixHandle;static uint32_t prefixMapped=0;static uint32_t residentMask[mm_asr::MaxOps/32];
@@ -117,14 +120,15 @@ void wipeFree(void *p,size_t bytes){if(p){memset(p,0,bytes);free(p);}}
 }
 bool offlineItalianReload(){if(busy.load())return false;cachedValid=false;dropPrefix();modelReady=false;return true;}
 void offlineItalianDebug(int c,int t){if(c>=0)forcedCores=c>2?2:c;if(t>=0)serialTrace=t!=0;}
-int offlineItalianTranscribe(const int16_t *pcm,size_t samples,std::atomic<bool> &cancel,String &text){
+int offlineItalianTranscribe(const int16_t *pcm,size_t samples,std::atomic<bool> &cancel,String &text,int language){
  if(busy.load()){text="";return 19;}// not re-entrant (USB test during a dictation)
- text="";offlineItalianReset();uint32_t start=millis();busy=true;
+ text="";offlineItalianReset();uint32_t start=millis();busy=true;language=dictationLanguageValid(language);lastLanguage=language;
  auto finish=[&](int error){elapsedMs=millis()-start;lastError=error;stage=4;busy=false;return error;};
  stage=1;
  if(cancel.load())return finish(24);
  if(samples<400||samples>size_t(mm_asr::SampleRate)*mm_asr::MaxSeconds)return finish(15);
- File file=SD.open(MODEL_PATH,FILE_READ);
+ if(cachedValid&&cachedLanguage!=language){cachedValid=false;dropPrefix();}   // another language: parse its header, re-check the flash prefix against it
+ File file=SD.open(dictationModelPath(language),FILE_READ);
  if(!file)return finish(10);
  Context ctx{cancel,millis(),start,millis(),{}};mm_asr::Hooks hooks;hooks.context=&ctx;hooks.service=service;hooks.trace=trace;hooks.millis=[](){return uint32_t(millis());};
  if(!cachedValid){
@@ -132,7 +136,7 @@ int offlineItalianTranscribe(const int16_t *pcm,size_t samples,std::atomic<bool>
   FileSource fs{&file};mm_asr::Source source;source.context=&fs;source.read=readFile;
   bool ok=readFile(&fs,0,cachedHeader,sizeof(cachedHeader))&&mm_asr::open(asrModel(),source)==mm_asr::Ok&&asrModel().bytes==file.size()&&asrModel().dtype==1;
   if(!ok){mm_asr::resetModel(asrModel());file.close();return finish(11);}
-  mapPrefix(hooks);cachedValid=true;
+  mapPrefix(hooks);cachedValid=true;cachedLanguage=language;
  }
  modelReady=true;modelBytes=asrModel().bytes;modelOps=asrModel().ops;loadMs=millis()-start;
  size_t required=mm_asr::workspaceBytes(asrModel(),samples);if(!required){file.close();return finish(15);}
@@ -162,12 +166,12 @@ int offlineItalianTranscribe(const int16_t *pcm,size_t samples,std::atomic<bool>
 #else
 bool offlineItalianReload(){return false;}
 void offlineItalianDebug(int,int){}
-int offlineItalianTranscribe(const int16_t*,size_t,std::atomic<bool>&,String &text){text="";lastError=16;return 16;}
+int offlineItalianTranscribe(const int16_t*,size_t,std::atomic<bool>&,String &text,int language){text="";lastLanguage=dictationLanguageValid(language);lastError=16;return 16;}
 #endif
 String offlineItalianMessage(){switch(lastError.load()){
  case 0:return "Offline dictation ready / review then Enter";
- case 10:return "Italian model not on SD card / draft kept";
- case 11:return "Italian model file invalid / draft kept";
+ case 10:return dictationMissingMessage(lastLanguage).c_str();
+ case 11:return dictationInvalidMessage(lastLanguage).c_str();
  case 14:case 23:return "Not enough ASR memory / draft kept";
  case 15:case 22:return "Invalid recording / draft kept";
  case 17:return "ASR arithmetic check failed / draft kept";

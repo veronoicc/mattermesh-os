@@ -14,6 +14,7 @@
 #include "lock_wallpapers.h"
 #include "lock_clock_glyphs.h"
 #include "services/dictation_policy.h"
+#include "services/dictation_language.h"
 #include "services/channel_form.h"
 #include "os_logo_bitmap.h"
 #include "services/sky.h"
@@ -611,7 +612,7 @@ void Renderer::settings(const State &s){
    case KeyboardSection:{std::string codes;for(auto l:mm_kbd::Order)if(s.kbdMask&(1u<<int(l))){if(!codes.empty())codes+=" ";codes+=mm_kbd::info(l).code;}return mm_kbd::enabledCount(s.kbdMask)>1?codes+" (Alt + Space)":"Typing: "+std::string(mm_kbd::info(mm_kbd::Lang(s.kbdLang)).name);}
    case AccentKeySection:return s.accentMode==1?"Right Shift":s.accentMode==2?"Left Shift":"Off";
    case HomeWidgetsSection:return "Beside clock: "+std::string(widgetInfo(s.homeWidget).name);
-   case 21:return "Speaker / microphone";case 20:return "Light timers / auto lock";case 5:return s.status.battery<0?"--%":std::to_string(s.status.battery)+"%";
+   case 21:return std::string("Dictation: ")+device::dictationLanguageName(s.dictationLanguage);case 20:return "Light timers / auto lock";case 5:return s.status.battery<0?"--%":std::to_string(s.status.battery)+"%";
    case 16:return s.timeSource;case 24:return s.sd?"SD available":"No SD";case 11:return "USB diagnostics";case 17:return "Update your firmware";
    case SupportSection:return s.extraAppsUnlocked?"Support the project":"Support the project, Extra apps";default:return "Version "+s.version;}};
   std::string detail=detailFor(SettingsItems[i].section);
@@ -838,8 +839,10 @@ void Renderer::section(const State &s){
   auto tone=[&](Rect r,Icon id,const char *label,const std::string &name){c.card(r);c.icon(id,r.x+6,r.y+(r.h-24)/2,24);c.text(r.x+36,r.y+3,label,Font::ChatMeta,FG,r.w-40);
    c.text(r.x+36,r.y+17,name,Font::Bold,FG,r.w-80);c.icon(Icon::Back,r.x+r.w-44,r.y+(r.h-12)/2,12);c.icon(Icon::ChevronRight,r.x+r.w-20,r.y+(r.h-12)/2,12);};
   tone(AudioToneMessage,Icon::Messages,"New message",s.messageTone);tone(AudioToneMention,Icon::Contacts,"Mention @you",s.mentionTone);
-  c.sectionLabel(AudioBackend.y-16,"DICTATION");c.card(AudioBackend);c.text(AudioBackend.x+7,AudioBackend.y+3,"Offline, Italian",Font::ChatBody,FG,AudioBackend.w-14);
-  c.text(AudioBackend.x+7,AudioBackend.y+19,s.offlineEngineCompiled?"Hold MIC, release to transcribe":"Model support not compiled",Font::ChatMeta,FG,AudioBackend.w-14);
+  c.sectionLabel(AudioBackend.y-16,"DICTATION","TAP TO CHANGE");c.card(AudioBackend);
+  {Rect r=AudioBackend;c.text(r.x+7,r.y+3,device::dictationEngineLabel(s.dictationLanguage),Font::ChatMeta,FG,r.w-70);
+   c.text(r.x+7,r.y+16,device::dictationLanguageName(s.dictationLanguage),Font::Bold,FG,r.w-70);c.icon(Icon::Back,r.x+r.w-44,r.y+8,12);c.icon(Icon::ChevronRight,r.x+r.w-20,r.y+8,12);
+   c.text(r.x+7,r.y+31,s.offlineEngineCompiled?device::dictationModelStatus(s.dictationLanguage,s.dictationModelBytes>0,s.dictationModelBytes):"Model support not compiled",Font::ChatMeta,FG,r.w-14);}
  }else if(s.page==Page::Power){
   c.sectionLabel(Top+6,"LIGHT TIMERS");
   const char *names[]={"Display / front-light","Keyboard backlight"};for(int i=0;i<2;i++){Rect r=powerRowRect(i);bool focus=s.powerField==i;c.card(r,focus);auto ink=focus?BG:FG;if(i)c.icon(Icon::Keyboard,r.x+6,r.y+(r.h-16)/2,16,ink);else{g.drawRect(r.x+7,r.y+14,16,10,ink);g.drawFastHLine(r.x+12,r.y+27,6,ink);}c.text(r.x+30,r.y+5,names[i],Font::ChatBody,ink,r.w-50);uint32_t seconds=i?s.keyboardTimeout:s.displayTimeout;std::string value=seconds==0?"Never":seconds>=60?std::to_string(seconds/60)+" minute"+(seconds>=120?"s":""):std::to_string(seconds)+" seconds";c.text(r.x+30,r.y+23,value+(seconds==30?" / default":""),Font::ChatMeta,ink,r.w-50);c.icon(Icon::ChevronRight,r.x+r.w-16,r.y+(r.h-12)/2,12,ink);}
