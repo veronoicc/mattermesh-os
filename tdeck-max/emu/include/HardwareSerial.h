@@ -37,5 +37,5 @@ public:
   unsigned long emuBaud() const;
   void emuOnWrite(std::function<void(const uint8_t *, size_t)> hook);
 };
-extern HardwareSerial Serial, Serial2;
+extern HardwareSerial Serial, Serial1, Serial2;
 void emuSerial2Feed(const uint8_t *, size_t);

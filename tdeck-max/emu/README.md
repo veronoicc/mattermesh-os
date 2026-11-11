@@ -55,6 +55,7 @@ but the firmware does not start MeshCore.
 | SD / NVS | Host directory / atomic Preferences file, using the existing core. |
 | Wi-Fi | Virtual AP `EMU-WiFi` / `meshcore`; real TCP sockets restricted to localhost. |
 | BLE / modem / BHI260AP | Existing disconnected BLE shim; modem absent. The BHI260AP is not modelled: `emu/stubs/services/motion_chip.h` replaces the SensorLib driver wrapper, the chip never answers and Settings > Motion / compass reports "Not detected" (raise to wake, heading and motion telemetry stay idle). |
+| LTE modem A7682E on Serial1 (`devices/modem_a76xx.cpp`) | Powered by XL9555 P00, started by a PWRKEY (P10) press; answers the AT sequence of `src/services/modem_engine.h`: SIM ready, "Emu Mobile" LTE with CSQ 21, a data bearer that opens, UCS2 text-mode SMS (`--sms TEXT [--sms-after MS]` delivers a message; sends are printed as `EMU_SMS_SENT`). TCP sockets are not bridged (`+CIPOPEN` fails), so Wi-Fi stays the only network. `--modem off` removes it. |
 
 **Display timing follows the checked-in driver:** BUSY is **active LOW**, power
 transitions take 45 ms, full refresh takes 1015 ms and ordinary partial takes 650 ms.

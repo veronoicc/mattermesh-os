@@ -2,6 +2,8 @@
 #include "map_tiles.h"
 #include "map_math.h"
 #include "connectivity.h"
+#include "modem.h"
+#include "cell_client.h"
 #include "map_tiles_ca.h"
 #include "ui/build_info.h"
 #include <HTTPClient.h>
@@ -31,29 +33,31 @@ struct Decode {PNG *png;uint8_t *luma,*tone;bool ok;};
 static int drawLine(PNGDRAW *draw){auto *d=static_cast<Decode*>(draw->pUser);if(draw->iWidth!=MapTileSize||draw->y>=MapTileSize){d->ok=false;return 0;}
  uint16_t line[MapTileSize];d->png->getLineAsRGB565(draw,line,PNG_RGB565_LITTLE_ENDIAN,0xffffffff);size_t row=size_t(draw->y)*MapTileSize;
  for(int x=0;x<MapTileSize;x++){d->luma[row+x]=mapLuma565(line[x]);d->tone[row+x]=mapOsmTone(line[x]);}return 1;}
-static bool fetch(WiFiClientSecure &client,HTTPClient &http,const TileKey &k,uint8_t *png,size_t &length){
+static bool fetch(WiFiClient &client,HTTPClient &http,const TileKey &k,uint8_t *png,size_t &length,uint32_t bodyMs){
  char path[48];snprintf(path,sizeof(path),"/%d/%lu/%lu.png",k.z,(unsigned long)k.x,(unsigned long)k.y);length=0;
  if(!http.begin(client,"tile.openstreetmap.org",443,path,true))return false;
  http.setUserAgent("MatterMeshOS/" MM_VERSION " (LilyGO " MM_DEVICE_MODEL "; on-device map cache)");bool ok=false;
  if(http.GET()==200){int size=http.getSize();WiFiClient *stream=http.getStreamPtr();
-  if(size>0&&size_t(size)<=PngCapacity&&stream){uint32_t deadline=millis()+15000;while(length<size_t(size)&&int32_t(millis()-deadline)<0){int n=stream->readBytes(png+length,size-length);if(n<=0){delay(5);continue;}length+=n;}ok=length==size_t(size);}}
+  if(size>0&&size_t(size)<=PngCapacity&&stream){uint32_t deadline=millis()+bodyMs;while(length<size_t(size)&&int32_t(millis()-deadline)<0){int n=stream->readBytes(png+length,size-length);if(n<=0){delay(5);continue;}length+=n;}ok=length==size_t(size);}}
  http.end();return ok;
 }
 static void workLoop(){
- WiFiClientSecure client;client.setCACert(MAP_TILES_ROOT_CA);client.setHandshakeTimeout(8);HTTPClient http;http.setReuse(true);http.setConnectTimeout(6000);http.setTimeout(8000);
+ std::unique_ptr<NetSecure> link;HTTPClient http;http.setReuse(true);// the link (Wi-Fi or cellular) is recreated when the route changes
  auto *png=static_cast<uint8_t*>(heap_caps_malloc(PngCapacity,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));auto *luma=static_cast<uint8_t*>(heap_caps_malloc(2*MapTileSize*MapTileSize,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));// luma, then tone
  void *decoderMemory=heap_caps_malloc(sizeof(PNG),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);PNG *decoder=decoderMemory?new(decoderMemory) PNG():nullptr;
  uint32_t idleMs=0;
  for(;;){TileKey k;
   // The kept-alive TLS session holds ~60 KB of internal RAM: dropped after 20 s idle, the whole task after a minute.
-  if(xQueueReceive(requests,&k,pdMS_TO_TICKS(20000))!=pdTRUE){if(client.connected())client.stop();idleMs+=20000;
+  if(xQueueReceive(requests,&k,pdMS_TO_TICKS(20000))!=pdTRUE){if(link&&link->client().connected())link->client().stop();idleMs+=20000;
    if(idleMs<WorkerIdleMs)continue;
    workerRunning=false;// a request queued meanwhile is picked up here, or by the task mapTile() starts
    if(uxQueueMessagesWaiting(requests)&&!workerRunning.exchange(true)){idleMs=0;continue;}
    break;}
   idleMs=0;TileResult r;r.key=k;
-  if(png&&luma&&decoder&&k.generation==generation.load()&&wifiConnected()){networkJobBegin();size_t length=0;// 240 MHz + WDT pause only while fetching
-   if(fetch(client,http,k,png,length)&&decoder->openRAM(png,length,drawLine)==PNG_SUCCESS){Decode d{decoder,luma,luma+MapTileSize*MapTileSize,true};
+  if(png&&luma&&decoder&&k.generation==generation.load()&&netUp()){networkJobBegin();size_t length=0;// 240 MHz + WDT pause only while fetching
+   NetPath route=netPath();bool cell=route==NetPath::Cell;if(!link||link->path()!=route){http.end();link.reset(new NetSecure(MAP_TILES_ROOT_CA,cell?20:8));}
+   http.setConnectTimeout(cell?20000:6000);http.setTimeout(cell?20000:8000);
+   if(fetch(link->client(),http,k,png,length,cell?40000:15000)&&decoder->openRAM(png,length,drawLine)==PNG_SUCCESS){Decode d{decoder,luma,luma+MapTileSize*MapTileSize,true};
     if(decoder->getWidth()==MapTileSize&&decoder->getHeight()==MapTileSize&&decoder->decode(&d,0)==PNG_SUCCESS&&d.ok){r.bits=static_cast<uint8_t*>(heap_caps_malloc(MapTileBytes,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));if(r.bits)mapConvertTile(d.luma,d.tone,r.bits);}
     decoder->close();}
    networkJobEnd();vTaskDelay(pdMS_TO_TICKS(RequestGapMs));}
@@ -104,7 +108,7 @@ const uint8_t *mapTile(int z,uint32_t x,uint32_t y,bool download){
  if(!started())return nullptr;
  TileKey k;k.z=uint8_t(z);k.x=x;k.y=y;if(auto *s=slotFor(k))return s->bits;
  Slot *slot=freeSlot();if(slot&&loadFromSd(k,*slot)){slot->key=k;slot->valid=true;slot->used=++useClock;return slot->bits;}
- if(download&&requests&&wifiConnected()&&!isPending(k)&&!recentlyFailed(k)&&pendingCount<QueueDepth){k.generation=generation.load();if(xQueueSend(requests,&k,0)==pdTRUE){pending[pendingCount++]=k;startWorker();}}
+ if(download&&requests&&netUp()&&!isPending(k)&&!recentlyFailed(k)&&pendingCount<QueueDepth){k.generation=generation.load();if(xQueueSend(requests,&k,0)==pdTRUE){pending[pendingCount++]=k;startWorker();}}
  return nullptr;
 }
 // Ring tiles around the view: never read on the UI loop (20 RAM slots could not hold the whole ring, so tiles evicted
@@ -116,7 +120,7 @@ void mapTilePrefetch(int z,uint32_t x,uint32_t y){
  if(sdOk&&!knownMissing(k)){char path[48];mapTilePath(path,sizeof(path),k.z,k.x,k.y);TileKey m=k;m.generation=1;
   if(storage->exists(path)){present[presentNext]=m;presentNext=(presentNext+1)%32;return;}
   missing[missingNext]=m;missingNext=(missingNext+1)%MissingMemo;}
- if(requests&&wifiConnected()&&!isPending(k)&&!recentlyFailed(k)&&pendingCount<QueueDepth){k.generation=generation.load();if(xQueueSend(requests,&k,0)==pdTRUE){pending[pendingCount++]=k;startWorker();}}
+ if(requests&&netUp()&&!isPending(k)&&!recentlyFailed(k)&&pendingCount<QueueDepth){k.generation=generation.load();if(xQueueSend(requests,&k,0)==pdTRUE){pending[pendingCount++]=k;startWorker();}}
 }
 void mapTilesForget(){generation++;}
 void mapTilesRescan(){for(auto &m:missing)m.generation=0;for(auto &p:present)p.generation=0;for(auto &f:failedRecent)f.at=0;}
@@ -130,5 +134,5 @@ void mapTilesLoop(){
  }
 }
 uint32_t mapTilesRevision(){return revision.load();}
-MapTilesState mapTilesState(){auto s=state;s.online=wifiConnected();s.queued=pendingCount;return s;}
+MapTilesState mapTilesState(){auto s=state;s.online=netUp();s.queued=pendingCount;return s;}
 }

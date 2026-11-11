@@ -1,5 +1,5 @@
 // Run the unchanged firmware setup()/loop() on the board chosen at build time.
-//   emu-plus [--data DIR] [--scale N] [--headless] [--no-sd] [--shot-after MS]... [--quit-after MS] [--script FILE] [--wifi SSID:PASS] [--port-offset N] [--name NODE] [--air PORT|off] [--gps LAT,LON[,ALT]|off]
+//   emu-plus [--data DIR] [--scale N] [--headless] [--no-sd] [--shot-after MS]... [--quit-after MS] [--script FILE] [--wifi SSID:PASS] [--port-offset N] [--name NODE] [--air PORT|off] [--gps LAT,LON[,ALT]|off] [--modem on|off] [--sms TEXT] [--sms-after MS]
 // DIR (default emu/data-plus) holds the SD card (sd/), the NVS (nvs.json) and screenshots.
 #include <Arduino.h>
 #include <emu_hal.h>
@@ -7,6 +7,7 @@
 #include "devices/window.h"
 #include "devices/script.h"
 #include "devices/gps_m10.h"
+#include "devices/modem_a76xx.h"
 #include <WiFi.h>
 #include <cstdio>
 #include <cstdlib>
@@ -21,7 +22,7 @@ void loop();
 // Ctrl+C / SIGTERM: the first asks the firmware loop to stop, a second one (or a stuck loop) exits at once.
 static void onSignal(int){static volatile sig_atomic_t count=0;if(count++)_exit(130);emu::requestQuit();}
 int main(int argc,char **argv){
- std::string data=std::string("emu/data-")+emuBoardName;int scale=3;bool headless=false,sd=true;static std::vector<uint32_t> shotsAt;static uint32_t quitAt=0;std::string wifiSsid="EMU-WiFi",wifiPass="meshcore";int portOffset=0;std::string node;int airPort=7300;bool gpsOn=true;double gpsLat=44.18795,gpsLon=8.24555,gpsAlt=420;
+ std::string data=std::string("emu/data-")+emuBoardName;int scale=3;bool headless=false,sd=true;static std::vector<uint32_t> shotsAt;static uint32_t quitAt=0;std::string wifiSsid="EMU-WiFi",wifiPass="meshcore";int portOffset=0;std::string node;int airPort=7300;bool gpsOn=true;double gpsLat=44.18795,gpsLon=8.24555,gpsAlt=420;bool modemOn=true;std::string smsText;unsigned smsAfter=20000;
  for(int i=1;i<argc;i++){
   if(!strcmp(argv[i],"--data")&&i+1<argc)data=argv[++i];
   else if(!strcmp(argv[i],"--scale")&&i+1<argc)scale=atoi(argv[++i]);
@@ -35,7 +36,10 @@ int main(int argc,char **argv){
   else if(!strcmp(argv[i],"--name")&&i+1<argc)node=argv[++i];
   else if(!strcmp(argv[i],"--gps")&&i+1<argc){const char *v=argv[++i];if(!strcmp(v,"off"))gpsOn=false;else if(sscanf(v,"%lf,%lf,%lf",&gpsLat,&gpsLon,&gpsAlt)<2){fprintf(stderr,"--gps LAT,LON[,ALT]\n");return 2;}}
   else if(!strcmp(argv[i],"--air")&&i+1<argc){const char *v=argv[++i];airPort=strcmp(v,"off")?atoi(v):0;}
-  else{fprintf(stderr,"usage: %s [--data DIR] [--scale N] [--headless] [--no-sd] [--shot-after MS]... [--quit-after MS] [--script FILE] [--wifi SSID:PASS] [--port-offset N] [--name NODE] [--air PORT|off] [--gps LAT,LON[,ALT]|off]\n",argv[0]);return 2;}
+  else if(!strcmp(argv[i],"--modem")&&i+1<argc)modemOn=strcmp(argv[++i],"off")!=0;
+  else if(!strcmp(argv[i],"--sms")&&i+1<argc)smsText=argv[++i];
+  else if(!strcmp(argv[i],"--sms-after")&&i+1<argc)smsAfter=unsigned(atol(argv[++i]));
+  else{fprintf(stderr,"usage: %s [--data DIR] [--scale N] [--headless] [--no-sd] [--shot-after MS]... [--quit-after MS] [--script FILE] [--wifi SSID:PASS] [--port-offset N] [--name NODE] [--air PORT|off] [--gps LAT,LON[,ALT]|off] [--modem on|off] [--sms TEXT] [--sms-after MS]\n",argv[0]);return 2;}
  }
  emuwifi::configure(wifiSsid.c_str(),wifiPass.c_str(),portOffset);
  mkdir(data.c_str(),0755);emu::setDataDir(data);emu::setSdPresent(sd);
@@ -43,6 +47,7 @@ int main(int argc,char **argv){
  if(node.empty()){auto slash=data.find_last_of('/');node=slash==std::string::npos?data:data.substr(slash+1);if(node.empty())node="plus";}
  boarddev::attach(node.c_str(),airPort);
  gpsm10::configure(gpsOn,gpsLat,gpsLon,gpsAlt);gpsm10::attach();
+ modememu::configure(modemOn);modememu::attach();if(!smsText.empty())modememu::scheduleSms(smsAfter,smsText);
  if(!window::open(scale,headless))return 1;
  std::signal(SIGINT,onSignal);std::signal(SIGTERM,onSignal);// after SDL_Init, which installs its own handlers
  printf("EMU_START board=%s data=%s sd=%d wifi=%s port_offset=%d node=%s air=%d\n"

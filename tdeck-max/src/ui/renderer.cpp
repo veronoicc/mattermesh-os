@@ -615,7 +615,7 @@ void Renderer::settings(const State &s){
   // Detail by section (not by row), so rows can be added or moved.
   auto detailFor=[&](int section)->std::string{switch(section){
    case WebAppSection:return s.webOn?(s.webLinked?"On, browser connected":"On"):"Your chats in a browser";case 4:return s.wifiConnected?"Connected":s.wifiEnabled?"On, not connected":"Off";case 14:return s.rlOn?"Used by Companion link":s.bleReady?"On":"Off";
-   case 2:return s.rlOn?"Off: companion radio in use":s.radioReady?"SX1262 ready":"Offline";case RadioLinkSection:return !s.rlOn?(s.rlSaved?std::string("Off"):std::string("Use another radio")):(s.rlReady?"In use: "+s.rlSavedName:"Connecting: "+s.rlSavedName);case 23:return s.radioInternal?"Internal antenna":"External antenna";
+   case 2:return s.rlOn?"Off: companion radio in use":s.radioReady?"SX1262 ready":"Offline";case CellularSection:return !s.cell.modem?"Off":s.cell.phase==device::ModemPhase::Registered?(s.cell.op.empty()?"On":s.cell.op)+" "+std::to_string(s.cell.bars)+"/4":device::modemPhaseText(s.cell.phase);case RadioLinkSection:return !s.rlOn?(s.rlSaved?std::string("Off"):std::string("Use another radio")):(s.rlReady?"In use: "+s.rlSavedName:"Connecting: "+s.rlSavedName);case 23:return s.radioInternal?"Internal antenna":"External antenna";
    case 3:return s.gpsEnabled?"On":"Off";case 6:return "Lights / haptics";case TracksSection:return s.trkRecording?"Recording":s.trkAuto?"Auto-start on":"Off";
    case MotionSection:return !s.motionEnabled?"Off":s.motionPhase==2?"Loading "+std::to_string(s.motionLoad)+"%":s.motionPhase==4?"Not detected":s.motionPhase==5?"Failed":s.motionHeadingValid?std::to_string(s.motionHeading)+"° "+device::compassName(float(s.motionHeading)):s.motionRaise?"Raise to wake on":"On";
    case 22:return std::string("Lock screen: ")+mm_wallpaper::list[s.wallpaper>=0&&s.wallpaper<mm_wallpaper::count?s.wallpaper:0].name;
@@ -1009,9 +1009,11 @@ void Renderer::section(const State &s){
 #include "noise_renderer.inc"
 #include "rpt_renderer.inc"
 #include "tracks_renderer.inc"
+#include "cellular_renderer.inc"
+#include "sms_renderer.inc"
 void Renderer::radioLinkAsk(){Rect panel=overlayPanel();c.text(Margin+8,Top+15,"Companion connected",Font::ChatTitle,FG,panel.w-16);c.text(Margin+8,Top+50,"Download the messages",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+66,"from the companion?",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+90,"No: they stay on it,",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+106,"new ones too.",Font::ChatMeta,FG,panel.w-16);c.button(RadioLinkAskNo,"NO");c.button(RadioLinkAskYes,"YES",true);}
 
 void Renderer::draw(const State &s){switch(s.page){
- case Page::RadioLink:case Page::RadioLinkSettings:case Page::WebApp:radioLinkPages(s);break;case Page::TracksApp:case Page::TracksSettings:tracksPages(s);break;case Page::DmPath:dmPathPage(s);break;case Page::Cli:cliApp(s);break;case Page::RxLog:rxLogApp(s);break;case Page::NoiseFloor:noiseApp(s);break;case Page::RptScanner:rptApp(s);break;
+ case Page::RadioLink:case Page::RadioLinkSettings:case Page::WebApp:radioLinkPages(s);break;case Page::TracksApp:case Page::TracksSettings:tracksPages(s);break;case Page::DmPath:dmPathPage(s);break;case Page::Cli:cliApp(s);break;case Page::RxLog:rxLogApp(s);break;case Page::NoiseFloor:noiseApp(s);break;case Page::RptScanner:rptApp(s);break;case Page::Cellular:cellularPage(s);break;case Page::Sms:smsPage(s);break;
  case Page::Home:home(s);break;case Page::Launcher:launcher(s);break;case Page::Messages:messages(s);break;case Page::Chat:chat(s);break;case Page::NewChat:form(s);break;case Page::ContactPicker:contactPicker(s);break;case Page::Settings:settings(s);break;case Page::QuickSettings:quickSettings(s);break;default:section(s);}if(s.channelOptions)channelOptions(s);}
 }

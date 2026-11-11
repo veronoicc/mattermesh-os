@@ -22,7 +22,7 @@ struct HardwareSerial::State {
 namespace {
 std::mutex stdoutMutex;
 }
-HardwareSerial Serial(0), Serial2(2);
+HardwareSerial Serial(0), Serial1(1), Serial2(2);
 HardwareSerial::HardwareSerial(int port)
     : state_(std::make_shared<State>()), port_(port) {}
 HardwareSerial::~HardwareSerial() = default;

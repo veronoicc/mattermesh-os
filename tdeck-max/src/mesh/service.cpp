@@ -1,4 +1,5 @@
 #include "../services/clock_limits.h"
+#include "../services/mqtt.h"
 #include "../board/device_model.h"
 #include "chat_limits.h"
 #include <memory>
@@ -405,6 +406,7 @@ void ChatMesh::recordRx(mesh::Packet *packet,int len){
  memcpy(p.payload,packet->payload,std::min<int>(packet->payload_len,RX_LOG_PAYLOAD_HEAD));if(packet->hasTransportCodes()){p.transport[0]=packet->transport_codes[0];p.transport[1]=packet->transport_codes[1];}
  uint8_t hash[MAX_HASH_SIZE];packet->calculatePacketHash(hash);memcpy(p.hash,hash,sizeof(p.hash));
  p.rssiTenths=int16_t(lroundf(driver.getLastRSSI()*10));p.snrTenths=int16_t(lroundf(packet->getSNR()*10));rxPackets.push(p);
+ {mqtt_uplink::Packet q;q.epoch=p.epoch;q.ms=uint16_t(p.uptimeMs%1000);q.snrTenths=p.snrTenths;q.rssiTenths=p.rssiTenths;memcpy(q.hash,hash,sizeof(q.hash));q.len=packet->writeTo(q.raw);device::mqttOffer(q);}// the MQTT uplink gets the packet as on air
 }
 const RxLog &rxLog(){return rxPackets;}
 void rxLogClear(){rxPackets.clear();}

@@ -60,6 +60,7 @@ static const uint8_t SCL = 9;
 #define bitClear(v, b) ((v) &= ~(1UL << (b)))
 #define bitWrite(v, b, x) ((x) ? bitSet(v, b) : bitClear(v, b))
 #define pgm_read_byte(p) (*reinterpret_cast<const uint8_t *>(p))
+#define pgm_read_byte_near(p) pgm_read_byte(p)
 #define pgm_read_word(p) (*reinterpret_cast<const uint16_t *>(p))
 #define pgm_read_dword(p) (*reinterpret_cast<const uint32_t *>(p))
 #define pgm_read_float(p) (*reinterpret_cast<const float *>(p))

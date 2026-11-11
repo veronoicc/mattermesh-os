@@ -30,7 +30,7 @@ endif
 
 ARDUINO_LIBS := $(HOME)/.platformio/packages/framework-arduinoespressif32/libraries
 INCS := -I$(OBJ)/generated -I$(OBJ)/generated/mesh -I$(OBJ)/generated/ui -Iemu/stubs -Iemu/include -Iemu -Isrc -I$(MC)/src -I$(MC)/lib/ed25519 \
- -I"$(LIBDEPS)/Crypto" -I"$(LIBDEPS)/base64/src" -I"$(LIBDEPS)/ArduinoJson/src" -I"$(LIBDEPS)/CayenneLPP/src" \
+ -I"$(LIBDEPS)/Crypto" -I"$(LIBDEPS)/base64/src" -I"$(LIBDEPS)/ArduinoJson/src" -I"$(LIBDEPS)/CayenneLPP/src" -I"$(LIBDEPS)/PubSubClient/src" \
  -I"$(LIBDEPS)/PNGdec/src" -I"$(LIBDEPS)/RadioLib/src" -I$(LL)/gfx -I$(LL)/busio -I$(LL)/tca8418 -I"$(HW)/SensorLib/src" -I"$(HW)/TinyGPSPlus/src" -I"$(HW)/TDeckMaxBoard/src" -I"$(HW)/GxEPD2/src" -I"$(HW)/HynTouch/src" -I$(LL)/drv2605 -I"$(HW)/XPowersLib/src" \
  -I"$(HW)/esp_codec_dev" -I"$(HW)/esp_codec_dev/include" -I"$(HW)/esp_codec_dev/interface" -I"$(HW)/esp_codec_dev/device/include" -I"$(HW)/esp_codec_dev/device/priv_include" $(shell sdl2-config --cflags) -I$(ARDUINO_LIBS)/HTTPClient/src
 
@@ -44,7 +44,7 @@ MC_SRC  := $(wildcard $(MC)/src/*.cpp) $(addprefix $(MC)/src/helpers/,BaseChatMe
            StaticPoolPacketManager.cpp TransportKeyStore.cpp radiolib/RadioLibWrappers.cpp)
 ED_SRC  := $(wildcard $(MC)/lib/ed25519/*.c)
 LIB_SRC := $(wildcard $(LIBDEPS)/Crypto/*.cpp) $(shell find "$(LIBDEPS)/RadioLib/src" -name '*.cpp') \
-           $(LIBDEPS)/CayenneLPP/src/CayenneLPP.cpp $(LIBDEPS)/PNGdec/src/PNGdec.cpp \
+           $(LIBDEPS)/CayenneLPP/src/CayenneLPP.cpp $(LIBDEPS)/PNGdec/src/PNGdec.cpp $(LIBDEPS)/PubSubClient/src/PubSubClient.cpp \
            $(addprefix $(LIBDEPS)/PNGdec/src/,adler32.c crc32.c infback.c inffast.c inflate.c inftrees.c zutil.c) \
            $(LL)/gfx/Adafruit_GFX.cpp $(LL)/busio/Adafruit_I2CDevice.cpp \
            $(LL)/busio/Adafruit_SPIDevice.cpp $(LL)/busio/Adafruit_BusIO_Register.cpp $(LL)/tca8418/Adafruit_TCA8418.cpp $(HW)/SensorLib/src/TouchDrvInterface.cpp \

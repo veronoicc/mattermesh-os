@@ -3,6 +3,8 @@
 #include "weather.h"
 #include "weather_ca.h"
 #include "connectivity.h"
+#include "modem.h"
+#include "cell_client.h"
 #include "location.h"
 #include "ui/build_info.h"
 #include "services/hex_util.h"
@@ -28,9 +30,10 @@ struct Request {uint32_t generation;bool gps;double latitude,longitude;std::vect
 static void publish(){state.revision++;revision.store(state.revision,std::memory_order_relaxed);}
 static void setPhase(WeatherPhase phase,const String &message){xSemaphoreTake(mutex,portMAX_DELAY);if(state.phase!=phase||state.message!=message){state.phase=phase;state.message=message;publish();}xSemaphoreGive(mutex);}
 static bool placeMatches(double latitude,double longitude){return placeCache.name[0]&&fabs(latitude-placeCache.latitude)<0.02&&fabs(longitude-placeCache.longitude)<0.02;}
-static void secure(WiFiClientSecure &client,HTTPClient &http){client.setCACert(WEATHER_ROOT_CA);client.setHandshakeTimeout(6);client.setTimeout(6);http.setConnectTimeout(5000);http.setTimeout(6000);}
+static unsigned linkSeconds(){return netPath()==NetPath::Cell?20:6;}// cellular round trips are slower than Wi-Fi's
+static void secure(NetSecure &link,HTTPClient &http){bool cell=link.path()==NetPath::Cell;link.client().setTimeout(linkSeconds());http.setConnectTimeout(cell?20000:5000);http.setTimeout(cell?20000:6000);}
 static String resolvePlace(const String &endpoint,double latitude,double longitude){
- WiFiClientSecure client;HTTPClient http;secure(client,http);String name;
+ NetSecure link(WEATHER_ROOT_CA,linkSeconds());WiFiClient &client=link.client();HTTPClient http;secure(link,http);String name;
  String url=endpoint+"/reverse?lat="+String(latitude,5)+"&lon="+String(longitude,5)+"&lang=en&limit=1";
  if(http.begin(client,url)){http.setUserAgent("MatterMeshOS/" MM_VERSION " " MM_DEVICE_TOKEN " weather-locality");if(http.GET()==200){DynamicJsonDocument json(2048);if(!deserializeJson(json,http.getString())){auto place=json["features"][0]["properties"];name=place["city"]|"";if(name.isEmpty()&&String(place["osm_key"]|"")=="place")name=place["name"]|"";if(name.isEmpty())name=place["county"]|"";}}http.end();}
  name.replace("\n"," ");name.replace("\r"," ");name.trim();return name;
@@ -39,7 +42,7 @@ static String resolvePlace(const String &endpoint,double latitude,double longitu
 static bool geolocate(const std::vector<AccessPoint> &aps,double &latitude,double &longitude,uint8_t &source){
  DynamicJsonDocument body(1536);body["considerIp"]=true;auto list=body.createNestedArray("wifiAccessPoints");
  for(auto &ap:aps){auto row=list.createNestedObject();row["macAddress"]=String(mm::hexString(ap.bssid,6,false,':').c_str());row["signalStrength"]=ap.rssi;}
- String payload;serializeJson(body,payload);WiFiClientSecure client;HTTPClient http;secure(client,http);bool ok=false;
+ String payload;serializeJson(body,payload);NetSecure link(WEATHER_ROOT_CA,linkSeconds());WiFiClient &client=link.client();HTTPClient http;secure(link,http);bool ok=false;
  if(http.begin(client,"https://api.beacondb.net/v1/geolocate")){http.setUserAgent("MatterMeshOS/" MM_VERSION " " MM_DEVICE_TOKEN " weather-position");http.addHeader("Content-Type","application/json");
   if(http.POST(payload)==200){DynamicJsonDocument json(1024);if(!deserializeJson(json,http.getString())){double lat=json["location"]["lat"]|NAN,lon=json["location"]["lng"]|NAN;if(isfinite(lat)&&isfinite(lon)&&fabs(lat)<=90&&fabs(lon)<=180){latitude=lat;longitude=lon;source=json["fallback"].isNull()?WeatherSourceWifi:WeatherSourceIp;ok=true;}}}http.end();}
  return ok;
@@ -55,7 +58,7 @@ static void fetchWeather(Request &request){
   else if(!located)error="Position unavailable";}
  if(!current(request.generation))return;
  if(error.isEmpty()){
-  WiFiClientSecure client;HTTPClient http;secure(client,http);
+  NetSecure link(WEATHER_ROOT_CA,linkSeconds());WiFiClient &client=link.client();HTTPClient http;secure(link,http);
   String url="https://api.open-meteo.com/v1/forecast?latitude="+String(latitude,5)+"&longitude="+String(longitude,5)+"&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,surface_pressure,wind_speed_10m&hourly=temperature_2m,weather_code&forecast_hours=13&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1";
   if(!http.begin(client,url))error="Weather connection failed";else{int status=http.GET();if(status==200){DynamicJsonDocument json(8192);if(deserializeJson(json,http.getString()))error="Invalid weather response";else{auto now=json["current"];auto daily=json["daily"];auto hourly=json["hourly"];
    if(now["temperature_2m"].isNull()||now["weather_code"].isNull()||daily["temperature_2m_max"][0].isNull()||daily["temperature_2m_min"][0].isNull())error="Weather fields missing";
@@ -106,8 +109,10 @@ void weatherLoop(){
  if(savePlace)preferences.putBytes("place",&place,sizeof(place));if(save)preferences.putBytes("cache",&cache,sizeof(cache));
  if(busy)return;
  auto connection=connectivityStatus();
- if(!connection.wifi){locating=false;setPhase(WeatherPhase::WifiOff,"Wi-Fi is off");return;}
- if(!connection.connected){locating=false;setPhase(connection.connecting||connection.remembered?WeatherPhase::Connecting:WeatherPhase::NoNetwork,connection.connecting||connection.remembered?"Connecting to Wi-Fi...":"No saved Wi-Fi network");return;}
+ bool viaCell=netPath()==NetPath::Cell;
+ if(!viaCell&&cellularSettings().network==NetMode::CellOnly){locating=false;setPhase(WeatherPhase::NoNetwork,"Cellular not connected");return;}
+ if(!viaCell&&!connection.wifi){locating=false;setPhase(WeatherPhase::WifiOff,"Wi-Fi is off");return;}
+ if(!viaCell&&!connection.connected){locating=false;setPhase(connection.connecting||connection.remembered?WeatherPhase::Connecting:WeatherPhase::NoNetwork,connection.connecting||connection.remembered?"Connecting to Wi-Fi...":"No saved Wi-Fi network");return;}
  if(time(nullptr)<MM_EPOCH_MIN){setPhase(WeatherPhase::WaitingClock,"Waiting for clock sync");return;}
  // GPS is used only if the user already has it on and it has a fix; its state is never touched.
  auto location=locationState();if(location.injected)location=LocationState{};/* never the weather of a test position */bool gps=location.enabled&&location.fix;
@@ -117,6 +122,7 @@ void weatherLoop(){
  if(!pending){xSemaphoreTake(mutex,portMAX_DELAY);if(state.phase!=WeatherPhase::Ready&&state.phase!=WeatherPhase::Error&&state.data.valid){state.phase=WeatherPhase::Ready;publish();}xSemaphoreGive(mutex);return;}
  pending=false;lastAttempt=millis();lastAttemptSource=gps?WeatherSourceGps:WeatherSourceWifi;
  if(gps){startWorker(true);return;}
+ if(viaCell){startWorker(false);setPhase(WeatherPhase::Locating,"Finding position...");return;}// no Wi-Fi scan over cellular: the provider locates by IP
  scanBase=wifiScanCount();scanStarted=millis();locating=true;scan();setPhase(WeatherPhase::Locating,"Finding position...");
 }
 uint32_t weatherRevision(){return revision.load(std::memory_order_relaxed);}

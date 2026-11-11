@@ -53,6 +53,8 @@ extern "C"{
 #include <Preferences.h>
 #include <nvs.h>
 #include "services/connectivity.h"
+#include "services/modem.h"
+#include "services/mqtt.h"
 #include "services/wifi_policy.h"
 #include "services/weather.h"
 #include "services/map_math.h"
@@ -176,6 +178,8 @@ mm::Rect dmPathLine{0,0,0,0};// last painted DM path line (renderChat)
 void dmPathOpen(int chat);void dmPathCompose(mm::State &v);bool dmPathKeyPress(char c);bool dmPathTap(int x,int y);String *dmPathField();bool dmPathBack();bool dmPathScroll(int d);bool dmPathSerial(const String &s);// chat Path (dm_path_app.inc)
 void webCompose(mm::State &v);bool webKey(char c);bool webTap(int x,int y);bool webSerial(const String &s);void webLoop();bool webActive();void webPause();void webResume();// web_app.inc
 bool radioLinkActive();bool radioLinkConnected();bool radioLinkAsking();void radioLinkAnswer(bool yes);size_t radioLinkTextLimit(bool direct);bool radioLinkChatSend(int chat,const String &body,uint32_t token,String &reason);void radioLinkBegin();void radioLinkLoop();void radioLinkCompose(mm::State &v);bool radioLinkKey(char c);bool radioLinkTap(int x,int y);String *radioLinkField();void radioLinkLeft();bool radioLinkSerial(const String &s);// companion link (radio_link_app.inc)
+void cellularCompose(mm::State &v);bool cellularKey(char c);bool cellularTap(int x,int y);String *cellularField();void cellularLeft();void cellularTick();// Settings > Cellular (cellular_app.inc)
+void smsCompose(mm::State &v);bool smsKey(char c);bool smsTap(int x,int y);String *smsField();bool smsBack();bool smsTyping();void smsAppend(const std::string &utf8);void smsOpened();void smsLeft();void smsLoop();// SMS app (sms_app.inc)
 void mapOpen();void mapClose();void routeOpen(const std::string &path,const std::string &sender);void routeClose();bool routeLoading();void routeCompose(mm::State &v);void mapCompose(mm::State &v);void mapPan(int dx,int dy);
 void tracksOpen(int id);void tracksLeft(int next);void tracksCompose(mm::State &v);bool tracksBack();bool tracksKey(char c);bool tracksTap(int x,int y);bool tracksScroll(int dy);void tracksUiLoop();bool tracksSerial(const String &s);// tracks_app.inc
 bool radioPowerEditing=false,radioDevicePage=false;int radioDeviceFocus=0;constexpr int CompanionNameField=matter::RadioFieldCount;String radioPowerInput;
@@ -204,6 +208,7 @@ String channelKeys[matter::CHAT_SLOTS],peerKeys[matter::CHAT_SLOTS];
 bool channelReady[matter::CHAT_SLOTS]={};
 unsigned long radioChangedAt=0;bool radioDirty=false;
 device::MessageBanner incomingBanner;
+String smsBannerFrom,smsBannerBody;uint32_t smsBannerUntil=0;// the SMS notification card (set by smsLoop in sms_app.inc)
 uint8_t displayBrightness=100;
 Adafruit_DRV2605 haptic;
 bool hapticReady=false,hapticEnabled=true;
@@ -723,6 +728,7 @@ v.radioRepeat=matter::repeatEnabled();
  if(!deviceLocked&&screen==Screen::Section&&mm::toolsSection(section))toolsCompose(v);
  if(!deviceLocked&&screen==Screen::Section&&(section==mm::RadioLinkSection||section==mm::RadioLinkSettingsSection||section==19))radioLinkCompose(v);if(!deviceLocked&&screen==Screen::Section&&(section==19||section==mm::WebAppSection))webCompose(v);/* Settings: the MatterMesh Web row *//* Settings: the Companion link row status */
  tracksCompose(v);// the REC pill, the Settings row, the Tracks pages
+if(!deviceLocked&&screen==Screen::Section&&(section==mm::CellularSection||section==19))cellularCompose(v);if(!deviceLocked&&screen==Screen::Section&&section==mm::SmsSection)smsCompose(v);/* Settings: the Cellular row status */
  v.homeWidget=homeWidget;v.homeWidgetFocus=homeWidgetFocus;v.homeMain=homeMain;v.homeMainFocus=homeMainFocus;v.homeWidgetsRow=homeWidgetsRow;// Settings shows the choices on its Home widgets rows
  if(screen==Screen::Section&&section==mm::NoteSection)v.noteInput=noteInput.c_str();
  if(!deviceLocked&&(screen==Screen::Home||(screen==Screen::Section&&section==mm::MainAreaSection)))fillMainWidget(v);// Home widgets draws Home from its own state
@@ -836,6 +842,7 @@ void loadLights(){
 mm::Page sectionPage(int id){
  if(id==mm::MotionSection)return mm::Page::Motion;
  if(id==mm::TracksAppSection)return mm::Page::TracksApp;if(id==mm::TracksSection)return mm::Page::TracksSettings;
+ if(id==mm::CellularSection)return mm::Page::Cellular;if(id==mm::SmsSection)return mm::Page::Sms;
  switch(id){case mm::WebAppSection:return mm::Page::WebApp;case mm::DmPathSection:return mm::Page::DmPath;case mm::RadioLinkSection:return mm::Page::RadioLink;case mm::RadioLinkSettingsSection:return mm::Page::RadioLinkSettings;case 1:return mm::Page::Mesh;case 2:return mm::Page::Radio;case 3:return mm::Page::GPS;case 4:return mm::Page::Wifi;case 5:return mm::Page::Battery;case 6:return mm::Page::Controls;case 7:return mm::Page::Files;case 8:return mm::Page::Info;case 9:return mm::Page::Maps;case 10:return mm::Page::Weather;case 11:return mm::Page::Terminal;case 14:return mm::Page::Bluetooth;case 16:return mm::Page::DateTime;case 17:return mm::Page::Updates;case mm::QuickSettingsSection:return mm::Page::QuickSettings;case 19:return mm::Page::Settings;case 20:return mm::Page::Power;case 21:return mm::Page::Audio;case 22:return mm::Page::Wallpaper;case mm::KeyboardSection:return mm::Page::Keyboard;case 23:return mm::Page::Antenna;case mm::AccentKeySection:return mm::Page::AccentKey;case mm::HomeWidgetsSection:return mm::Page::HomeWidgets;case mm::BesideClockSection:return mm::Page::BesideClock;case mm::MainAreaSection:return mm::Page::MainArea;case mm::NoteSection:return mm::Page::Note;case 24:return mm::Page::Storage;case mm::CliSection:return mm::Page::Cli;case mm::RxLogSection:return mm::Page::RxLog;case mm::NoiseFloorSection:return mm::Page::NoiseFloor;case mm::RptScannerSection:return mm::Page::RptScanner;case mm::SupportSection:return mm::Page::Support;default:return mm::Page::Info;}
 }
 void renderSection(){
@@ -868,6 +875,7 @@ void confirmShutdown(){
 void loadRadioDraft(bool keepSelection);
 void openSection(int id,bool paint){
  wifiSavedOpen=false;wifiForgetArmed=-1;
+ if(id==mm::SmsSection)smsOpened();
  cancelDictation();
  if(id==21)refreshDictationModel();
  antennaConfirm=shutdownConfirm=otaConfirm=dateEditing=tzPicking=tzFocus=false;emojiPicker=false;scopePicker=scopeEditing=clearChatConfirm=channelOptions=deleteChannelConfirm=positionShare=false;
@@ -886,7 +894,7 @@ bool idleCpuLoop(){if(deviceLocked)return false;bool busy=dirty||radioDirty||dev
 static bool chatOverlayOpen(){return channelOptions||positionShare||chatDetails||scopePicker||clearChatConfirm||messageActions||messagePath||emojiPicker;}
 // The notification card painted over the status bar while unlocked (one at a time, chat notice, message, update) and
 // opened by a tap.
-enum class TopBanner {None,Update,ChatNotice,Message};
+enum class TopBanner {None,Update,ChatNotice,Message,Sms};
 // No card at all: locked, welcome, pickers and forms, or any text field but the chat composer being typed (a tap would
 // lose the text; the composer keeps its draft).
 bool topBannerHidden(){
@@ -899,6 +907,7 @@ TopBanner topBanner(){
  if(screen==Screen::Chat&&!channelOptions&&chatErrorUntil&&int32_t(chatErrorUntil-millis())>0)return TopBanner::ChatNotice;
  if(topBannerHidden())return TopBanner::None;
  if(incomingBanner.active&&incomingBanner.chat<chatCount&&!(screen==Screen::Chat&&activeChat==incomingBanner.chat))return TopBanner::Message;// a message first: its card lasts only a few seconds
+ if(smsBannerUntil&&int32_t(smsBannerUntil-millis())>0&&!(screen==Screen::Section&&section==mm::SmsSection))return TopBanner::Sms;// a new text message
  if(otaBannerUntil&&int32_t(otaBannerUntil-millis())>0&&!(screen==Screen::Section&&section==17))return TopBanner::Update;// not over OTA update itself
  return TopBanner::None;
 }
@@ -935,6 +944,7 @@ void render(int batteryPreview) {
    case TopBanner::Update:renderer.notificationBanner(topBannerRect(),topBannerClearTo(),mm::Icon::Settings,"Update available","OTA",otaBannerText);break;
    case TopBanner::ChatNotice:renderer.notificationBanner(topBannerRect(),topBannerClearTo(),mm::Icon::Info,chatError.c_str(),"","");break;
    case TopBanner::Message:{const auto &chat=chats[incomingBanner.chat];renderer.notificationBanner(topBannerRect(),topBannerClearTo(),mm::Icon::Messages,mm::senderDisplayName(incomingBanner.sender),chat.direct?"Direct":chat.name.c_str(),incomingBanner.body);break;}
+   case TopBanner::Sms:renderer.notificationBanner(topBannerRect(),topBannerClearTo(),mm::Icon::Messages,smsBannerFrom.c_str(),"SMS",smsBannerBody.c_str());break;
    case TopBanner::None:break;
   }
  }
@@ -1043,6 +1053,7 @@ void back() {
  if(screen==Screen::Welcome){welcomeBack();return;}
  if(screen==Screen::Section&&mm::toolsSection(section)&&toolsBack())return;
  if(tracksBack())return;
+ if(screen==Screen::Section&&section==mm::SmsSection&&smsBack())return;
  if(dmPathBack())return;
  if(screen==Screen::Section&&section==1&&(contactMenu||contactDialog)){contactPopupsClose();render();return;}
  if(channelOptions){if(channelKeyView)closeChannelKey();else if(deleteChannelConfirm)deleteChannelConfirm=false;else{channelOptions=false;channelOptionTarget=-1;}notice="";render();return;}
@@ -1103,6 +1114,8 @@ String *editableField(){
  if(screen==Screen::Section&&section==mm::KeyboardSection&&kbdSearching)return &kbdQuery;
  if(screen==Screen::Section&&section==14&&bleNameEditing)return &bleNameInput;
  if(screen==Screen::Section&&(section==mm::RadioLinkSection||section==mm::RadioLinkSettingsSection))return radioLinkField();
+ if(screen==Screen::Section&&section==mm::CellularSection)return cellularField();
+ if(screen==Screen::Section&&section==mm::SmsSection)return smsField();
  if(screen==Screen::NewChat){if(formField==1)return newForm==int(mm::ChannelForm::JoinPrivate)?&newKey:nullptr;return formField==0?&newName:&newScope;}
  if(screen==Screen::Section){if(mm::toolsSection(section))return toolsField();if(section==2&&radioPowerEditing)return &radioPowerInput;if(section==4&&wifiEditing)return wifiEditField==0?&wifiTarget:&wifiPassword;}
  return nullptr;
@@ -1111,6 +1124,8 @@ String *editableField(){
 #include "map_app.inc"
 #include "tracks_app.inc"
 #include "radio_link_app.inc"
+#include "cellular_app.inc"
+#include "sms_app.inc"
 #include "web_app.inc"
 #include "cli_app.inc"
 #include "rx_log_app.inc"
@@ -1144,6 +1159,7 @@ void appVisibilityLoop(){
  int now=!deviceLocked&&screen==Screen::Section?section:-1;
  if(now!=visibleApp){int previous=visibleApp;visibleApp=now;
   if(previous==mm::RadioLinkSection||previous==mm::RadioLinkSettingsSection)radioLinkLeft();
+  if(previous==mm::CellularSection)cellularLeft();if(previous==mm::SmsSection)smsLeft();
   if(previous==9)mapClose();else if(previous==4)wifiPageLeft();else if(previous==14){bleNameEditing=false;bleNameInput="";}else if(mm::toolsSection(previous))toolsClose(previous);
   if(previous==mm::TracksAppSection)tracksLeft(now);
   }
@@ -1265,6 +1281,8 @@ void key(char c) {
  if(dmPathKeyPress(c))return;
  if(c!='\b'&&webKey(c))return;
  if(c!='\b'&&tracksKey(c))return;
+ if(c!='\b'&&cellularKey(c))return;
+ if(c!='\b'&&smsKey(c))return;
  if(screen==Screen::Section&&mm::toolsSection(section)&&toolsKey(c))return;
  if(c!='\b'&&radioLinkKey(c))return;
  if(c=='\b'){auto field=editableField();if(!field||!field->length()){back();return;}if(field==&input)inputEraseBeforeCursor();else eraseLastCodepoint(*field);notice="";if(screen==Screen::Chats&&searching){auto list=conversationList();selected=list.empty()?chatCount:list[0].id;}if(screen==Screen::PickContact){pickerFocus=0;refreshPicker();}if(screen==Screen::Section&&section==1)contactFocus=nodeScroll=0;if(screen==Screen::Section&&section==mm::KeyboardSection)kbdFocus=0;repaintSettled();return;}
@@ -1453,6 +1471,7 @@ bool bannerTap(int x,int y){
  device::activity();Serial.printf("BANNER_TAP kind=%d\n",int(banner));
  if(banner==TopBanner::Update){otaBannerUntil=0;openSection(17);}
  else if(banner==TopBanner::ChatNotice){chatErrorUntil=0;chatError="";render();}
+ else if(banner==TopBanner::Sms){smsBannerUntil=0;closePageDialogs();navigation.clear();openSection(mm::SmsSection);}
  else{int id=incomingBanner.chat;incomingBanner.clear();closePageDialogs();if(screen==Screen::Chat){chatLeft();openConversation(id,chatParent,chatParentSection);}
   else if(screen==Screen::Section){navigation.clear();openConversation(id,sectionParent);}/* leaves the app (its close hook runs): BACK goes Home / Apps */else openConversation(id,screen,section);}
  return true;
@@ -1485,6 +1504,8 @@ void tap(int x,int y) {
  if(screen==Screen::Section){
   if(mm::toolsSection(section)&&toolsTap(x,y))return;
   if(radioLinkTap(x,y))return;
+  if(cellularTap(x,y))return;
+  if(smsTap(x,y))return;
   if(webTap(x,y))return;
  if(tracksTap(x,y))return;
   if(dmPathTap(x,y))return;
@@ -1655,9 +1676,10 @@ void loadAccentMode(){accentMode=constrain(device::prefGetInt("mmui","accent",2)
 bool setAccentMode(int mode){if(mode<0||mode>2)return false;if(!device::prefPutInt("mmui","accent",mode))return false;accentMode=mode;accentTaps=0;accentTyped=false;return true;}
 void accentKey(bool pressed){if(pressed){if(deviceLocked)quickReplyInputAt=millis();accentTaps=accentTaps>=4?0:accentTaps+1;accentTyped=false;}else if(accentTyped){accentTaps=0;accentTyped=false;}if(deviceLocked)lockScreenDirty=true;else repaintSettled();}
 // Language letters go to the message composer and the lock-screen quick reply; menus keep the plain keys.
-static bool typingMessage(){return deviceLocked?quickReply.active:!deviceLocked&&screen==Screen::Chat&&!emojiPicker&&editableField()==&input;}
+static bool typingMessage(){return smsTyping()||(deviceLocked?quickReply.active:!deviceLocked&&screen==Screen::Chat&&!emojiPicker&&editableField()==&input);}
 static void typeText(const std::string &text){
  device::activity();
+ if(smsTyping()){smsAppend(text);repaintSettled();return;}
  if(deviceLocked){quickReply.appendText(text);quickReplyInputAt=millis();lockScreenDirty=true;return;}
  if(input.length()+text.size()<=messageByteLimit()){inputInsert(String(text.c_str()));notice="";}else notice=matter::messageLimitError(messageByteLimit()).c_str();
  repaintSettled();
@@ -2197,6 +2219,7 @@ void setup(){
  advertGps=device::prefGetInt("mmadvert","gps",0)!=0;
  device::audioBegin(expander,expanderReady);
  device::motionBegin(expander,expanderReady);
+ device::modemBegin(expander,expanderReady);device::mqttBegin();
  if(sdReady){loadBindings();radioJournal.begin(SD);
   uint32_t latest[MAX_CHATS]={};for(auto &record:radioJournal.index)if(!record.mine&&record.chat>=0&&record.chat<chatCount)latest[record.chat]=record.token;
   for(int i=0;i<chatCount;i++)if(!(radioJournal.readTrackedChats&(uint32_t(1)<<i)))radioJournal.markRead(i,latest[i]);
@@ -2227,6 +2250,8 @@ void loop(){
   handle(command);command="";if(request)Serial.printf("USB_DONE %lu\n",request);
  }else if(c!='\r'&&command.length()<256)command+=c;}
  matter::loop();hapticLoop();device::audioLoop();webLoop();device::tracksLoop();tracksUiLoop();
+ device::modemLoop();smsLoop();cellularTick();{static uint32_t idAt=0;if(!idAt||uint32_t(millis()-idAt)>=5000){idAt=millis()|1;device::mqttSetIdentity(matter::snapshot().config.name.c_str(),matter::ownKey().c_str());}}
+ if(smsBannerUntil&&int32_t(smsBannerUntil-millis())<=0){smsBannerUntil=0;repaintNow();}// the SMS card runs out
  if(!deviceLocked&&screen==Screen::Chat&&archivePager.poll(radioJournal)){chatRowsRevision++;repaintNow();}
  if(deviceLocked)incomingBanner.clear();else if(incomingBanner.expire(millis())){repaintNow();}
  // OTA: repaint Settings / Updates on progress; a newly offered release shows a banner once per boot.

@@ -6,6 +6,7 @@
 // Implementation: emu/devices/wifi_emu.cpp.
 #include <Arduino.h>
 #include <IPAddress.h>
+#include <Client.h>
 #include <functional>
 #include <memory>
 typedef enum {WIFI_OFF=0,WIFI_MODE_NULL=0,WIFI_STA=1,WIFI_AP=2,WIFI_AP_STA=3} wifi_mode_t;
@@ -25,7 +26,7 @@ namespace emuwifi {void configure(const char *ssid,const char *password,int port
 class WiFiScanClass {protected:static inline uint32_t _scanTimeout=10000;};
 
 // TCP client on a host socket; copies share the connection (as Arduino-ESP32's WiFiClient).
-class WiFiClient:public Stream {
+class WiFiClient:public Client {
 public:
  struct Socket;
  WiFiClient();
@@ -48,7 +49,7 @@ public:
  size_t write(uint8_t b)override;
  size_t write(const uint8_t *buf,size_t n)override;
  void flush()override{}
- explicit operator bool(){return connected();}
+ operator bool() override{return connected();}
  bool operator==(const WiFiClient &o) const {return sock==o.sock;}
 protected:
  std::shared_ptr<Socket> sock;
