@@ -239,8 +239,10 @@ void Components::statusBar(const Status &s){
   int dy=StatusIconY+(IconStatus-(bottom-top+1))/2-top;
   for(int y=top;y<=bottom;y++)for(int x=left;x<=right;x++)if(glyph.getPixel(x,y)&&(!waiting[i]||((x+y)&1)))g.drawPixel(dx+x,dy+y,FG);
  }
- if(s.web){const char *label="WEB";int pw=width(label,Font::ChatMeta)+8,px=(count?first:layout.iconsRight)-pw-4;// MatterMesh Web serving: a pill left of the icons
-  g.fillRoundRect(px,StatusIconY,pw,StatusH-5,4,FG);text(px+4,StatusTextY,label,Font::ChatMeta,BG);}
+ int edge=count?first:layout.iconsRight;// pills grow leftwards from the icons: WEB (MatterMesh Web serving), then REC (a GPS track is recording)
+ if(s.web){const char *label="WEB";int pw=width(label,Font::ChatMeta)+8,px=edge-pw-4;// MatterMesh Web serving: a pill left of the icons
+  g.fillRoundRect(px,StatusIconY,pw,StatusH-5,4,FG);text(px+4,StatusTextY,label,Font::ChatMeta,BG);edge=px;}
+ if(s.rec){const char *label="REC";int pw=width(label,Font::ChatMeta)+8,px=edge-pw-4;if(px>StatusAntennaX+StatusAntennaW+(s.keyboard.empty()?0:26)){g.fillRoundRect(px,StatusIconY,pw,StatusH-5,4,FG);text(px+4,StatusTextY,label,Font::ChatMeta,BG);}}// a GPS track is recording; never over the antenna / keyboard labels
  text(layout.percentX,StatusTextY,layout.percent,Font::ChatBody);
  if(s.charging){int x=layout.batteryX+1;g.fillTriangle(x+7,StatusIconY,x+1,StatusIconY+7,x+7,StatusIconY+7,FG);g.fillTriangle(x+5,StatusIconY+4,x+5,StatusIconY+12,x+11,StatusIconY+4,FG);}
  else {int x=layout.batteryX,y=StatusBatteryY;g.fillRect(x,y,12,StatusBatteryH,FG);g.fillRect(x+2,y+2,8,5,BG);g.fillRect(x+12,y+3,2,3,FG);int level=std::max(0,std::min(100,s.battery));int fill=(level*6+50)/100;if(fill)g.fillRect(x+3,y+3,fill,3,FG);}

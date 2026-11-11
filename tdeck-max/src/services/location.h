@@ -11,6 +11,8 @@ void locationBegin(ExtensionIOXL9555 &io,bool ready);void locationLoop();Locatio
 // Tests ("gps inject"): NMEA lines from USB instead of the receiver (GPS on).
 bool locationInject(bool on);bool locationInjectLine(const char *line);
 bool locationEnabled(bool enabled);bool locationToggleUser();bool locationTimeLease(bool acquire);int locationPowerLevel();
+// A recording GPS track keeps the receiver powered (user OFF and a released time lease do not cut it); false when it cannot be powered.
+bool locationHold(bool on);bool locationHeld();
 // Host-side navigation database store (gps_backup.h): load/save the whole blob, e.g. on the SD card.
 struct LocationStore {bool (*load)(std::vector<uint8_t>&)=nullptr;bool (*save)(const std::vector<uint8_t>&)=nullptr;};
 void locationStore(LocationStore store);bool locationBackupNow();std::string locationBackupDiagnostic();

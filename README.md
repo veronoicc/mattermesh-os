@@ -28,6 +28,7 @@ It speaks the MeshCore companion protocol, so it works with the MeshCore apps an
 - MeshCore companion over Bluetooth, USB and Wi-Fi
 - Full MeshCore companion protocol v14: repeater login and admin console, status, telemetry, trace path (ping), path discovery, signing, flood scopes, stats and tuning, and client repeat mode (Settings → LoRa → Device). Private key import and export stay off unless built with `-D ENABLE_PRIVATE_KEY_EXPORT=1 -D ENABLE_PRIVATE_KEY_IMPORT=1`, as in MeshCore
 - Apps: **Maps** (OpenStreetMap tiles with GPS), **Weather** (Open-Meteo), **Files**, **CLI**
+- **GPS tracks** (Tracks app, Settings → GPS tracks): a breadcrumb recorded to `/mattermesh/tracks/` on the SD card (a point per interval and distance, crash-safe rows), distance / time / climb / top speed, GPX 1.1 export next to it (listed in Files), the track drawn in Maps, optional auto-start and GPS kept on while recording
 - Offline dictation in English, German and Italian (hold MIC; the speech model of the language chosen in Settings → Sound / dictation is loaded from the SD card and is distributed separately, see [Offline dictation models](#offline-dictation-models))
 
 ## Build

@@ -35,7 +35,7 @@ void mapOpen(){
 }
 // Leaving the app (Back, Home, lock, serial): drop the queued downloads so the
 // worker stops fetching, and release the composed view (PSRAM) until next open.
-void mapClose(){device::mapTilesForget();if(mapViewBits){heap_caps_free(mapViewBits);mapViewBits=nullptr;}mapVisibleCount=mapMissingCount=0;}
+void mapClose(){device::mapTilesForget();device::tracksDeselect();if(mapViewBits){heap_caps_free(mapViewBits);mapViewBits=nullptr;}mapVisibleCount=mapMissingCount=0;}// the track "View on map" selected goes with the app
 void mapPan(int dx,int dy){
  auto c=device::mapProject(mapView.lat,mapView.lon,mapView.zoom);double world=device::mapWorldSize(mapView.zoom);
  c.x=fmod(c.x+dx+world,world);c.y=constrain(c.y+dy,0.0,world-1);device::mapUnproject(c,mapView.zoom,mapView.lat,mapView.lon);
@@ -75,6 +75,9 @@ void mapCompose(mm::State &v){
  auto center=device::mapProject(clat,clon,z);double north,west,south,east;device::mapUnproject({center.x-w/2.0,center.y-h/2.0},z,north,west);device::mapUnproject({center.x+w/2.0,center.y+h/2.0},z,south,east);
  matter::NodePin pins[24];int count=matter::nodePins(south,west,north,east,pins,24);
  for(int i=0;i<count;i++){double x,y;mapScreen(a,pins[i].lat,pins[i].lon,clat,clon,z,x,y);if(!mapInside(a,x,y))continue;mm::MapPin pin;pin.x=lround(x);pin.y=lround(y);pin.repeater=pins[i].repeater;pin.name=mm::senderDisplayName(pins[i].name);v.mapPins.push_back(pin);}
+ // GPS track (Tracks): the selected track, else the one being recorded; clipped segments, drawn in their own style (renderer mapView).
+ {auto &line=device::tracksMapLine();double px=0,py=0;bool have=false;
+  for(auto &p:line){double x,y;mapScreen(a,mm_track::deg(p.lat),mm_track::deg(p.lon),clat,clon,z,x,y);if(have){double ax=px,ay=py,bx=x,by=y;if(device::mapClipSegment(ax,ay,bx,by,a.x,a.y,a.w,a.h)){mm::MapSegment seg;seg.x0=lround(ax);seg.y0=lround(ay);seg.x1=lround(bx);seg.y1=lround(by);v.mapTrack.push_back(seg);}}px=x;py=y;have=true;}}
  if(gps.fix||gps.configured){double x,y;mapScreen(a,gps.latitude,gps.longitude,clat,clon,z,x,y);if(mapInside(a,x,y)){v.mapSelfX=lround(x);v.mapSelfY=lround(y);}}
  mapScale(clat,z,v);
  auto tiles=device::mapTilesState();v.mapStatus="Z"+std::to_string(z);

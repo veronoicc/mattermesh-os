@@ -466,7 +466,10 @@ void Renderer::mapView(const State &s){
  auto label=[&](int x,int y,const std::string &text){int w=c.width(text,Font::Tiny)+4;x=std::max(A.x,std::min(x,A.x+A.w-w));g.fillRect(x,y,w,11,BG);c.text(x+2,y+1,text,Font::Tiny);};
  // Packet route: white halo then a 2 px black line, dashed across hops with no known position.
  for(auto &seg:s.mapRoute){int dx=seg.x1-seg.x0,dy=seg.y1-seg.y0,len=std::max(std::abs(dx),std::abs(dy));
-  for(int pass=0;pass<2;pass++)for(int i=0;i<=len;i++){if(seg.dashed&&(i/6)%2)continue;int x=seg.x0+(len?dx*i/len:0),y=seg.y0+(len?dy*i/len:0);if(pass==0)g.fillRect(x-2,y-2,5,5,BG);else g.fillRect(x-1,y-1,2,2,FG);}}
+ for(int pass=0;pass<2;pass++)for(int i=0;i<=len;i++){if(seg.dashed&&(i/6)%2)continue;int x=seg.x0+(len?dx*i/len:0),y=seg.y0+(len?dy*i/len:0);if(pass==0)g.fillRect(x-2,y-2,5,5,BG);else g.fillRect(x-1,y-1,2,2,FG);}}
+// GPS track (Tracks): a 5 px black band with a white 1 px core, so it never looks like the packet route above.
+ for(auto &seg:s.mapTrack){int dx=seg.x1-seg.x0,dy=seg.y1-seg.y0,len=std::max(std::abs(dx),std::abs(dy));
+ for(int pass=0;pass<2;pass++)for(int i=0;i<=len;i++){int x=seg.x0+(len?dx*i/len:0),y=seg.y0+(len?dy*i/len:0);if(pass==0)g.fillRect(x-2,y-2,5,5,FG);else g.drawPixel(x,y,BG);}}
  for(auto &pin:s.mapPins){if(pin.step>=0){if(pin.step==0){g.fillRect(pin.x-7,pin.y-7,15,15,BG);g.fillRect(pin.x-5,pin.y-5,11,11,FG);}else{g.fillCircle(pin.x,pin.y,9,BG);g.fillCircle(pin.x,pin.y,7,FG);std::string n=std::to_string(pin.step);c.text(pin.x-c.width(n,Font::Tiny)/2+1,pin.y-4,n,Font::Tiny,BG);}
    if(!pin.name.empty())label(pin.x+10,pin.y-5,pin.name);continue;}
   if(pin.repeater){g.fillTriangle(pin.x,pin.y-9,pin.x-8,pin.y+6,pin.x+8,pin.y+6,BG);g.fillTriangle(pin.x,pin.y-6,pin.x-5,pin.y+4,pin.x+5,pin.y+4,FG);}else{g.fillCircle(pin.x,pin.y,6,BG);g.fillCircle(pin.x,pin.y,4,FG);}
@@ -613,7 +616,7 @@ void Renderer::settings(const State &s){
   auto detailFor=[&](int section)->std::string{switch(section){
    case WebAppSection:return s.webOn?(s.webLinked?"On, browser connected":"On"):"Your chats in a browser";case 4:return s.wifiConnected?"Connected":s.wifiEnabled?"On, not connected":"Off";case 14:return s.rlOn?"Used by Companion link":s.bleReady?"On":"Off";
    case 2:return s.rlOn?"Off: companion radio in use":s.radioReady?"SX1262 ready":"Offline";case RadioLinkSection:return !s.rlOn?(s.rlSaved?std::string("Off"):std::string("Use another radio")):(s.rlReady?"In use: "+s.rlSavedName:"Connecting: "+s.rlSavedName);case 23:return s.radioInternal?"Internal antenna":"External antenna";
-   case 3:return s.gpsEnabled?"On":"Off";case 6:return "Lights / haptics";
+   case 3:return s.gpsEnabled?"On":"Off";case 6:return "Lights / haptics";case TracksSection:return s.trkRecording?"Recording":s.trkAuto?"Auto-start on":"Off";
    case MotionSection:return !s.motionEnabled?"Off":s.motionPhase==2?"Loading "+std::to_string(s.motionLoad)+"%":s.motionPhase==4?"Not detected":s.motionPhase==5?"Failed":s.motionHeadingValid?std::to_string(s.motionHeading)+"° "+device::compassName(float(s.motionHeading)):s.motionRaise?"Raise to wake on":"On";
    case 22:return std::string("Lock screen: ")+mm_wallpaper::list[s.wallpaper>=0&&s.wallpaper<mm_wallpaper::count?s.wallpaper:0].name;
    case KeyboardSection:{std::string codes;for(auto l:mm_kbd::Order)if(s.kbdMask&(1u<<int(l))){if(!codes.empty())codes+=" ";codes+=mm_kbd::info(l).code;}return mm_kbd::enabledCount(s.kbdMask)>1?codes+" (Alt + Space)":"Typing: "+std::string(mm_kbd::info(mm_kbd::Lang(s.kbdLang)).name);}
@@ -774,7 +777,7 @@ void Renderer::section(const State &s){
   c.sectionLabel(MotionOrientation.y-15,"MAP / TELEMETRY");step(MotionOrientation,"Orientation",s.motionHeadingUp?"Heading up":"North up");pill(MotionShare,"Share in telemetry",s.motionTelemetry);
   {auto r=motionRowRect(std::max(0,std::min(MotionRows-1,s.motionFocus)));g.fillRect(2,r.y+4,3,r.h-8,FG);}// keyboard focus marker left of the row
  }else if(s.page==Page::GPS){
-  c.toggleRow(GpsToggle,Icon::GPS,"GPS receiver",!s.gpsAvailable?"Unavailable":s.gpsTemporary?"On for time sync":s.gpsEnabled?"Enabled by user":"Off, saved position kept",s.gpsEnabled&&!s.gpsTemporary,s.gpsTemporary?"KEEP ON":"");
+  c.toggleRow(GpsToggle,Icon::GPS,"GPS receiver",!s.gpsAvailable?"Unavailable":s.gpsTemporary?(s.trkRecording?"On while recording":"On for time sync"):s.gpsEnabled?"Enabled by user":"Off, saved position kept",s.gpsEnabled&&!s.gpsTemporary,s.gpsTemporary?"KEEP ON":"");
   c.sectionLabel(SettingsSectionY,"STATUS");
   valueCard(settingsHalf(0,SettingsBodyY),"FIX",!s.gpsAvailable?"Unavailable":!s.gpsEnabled?"Off":s.gpsFix?"Position fix":"Searching...");
   valueCard(settingsHalf(1,SettingsBodyY),"SATELLITES",s.gpsEnabled?std::to_string(s.gpsUsed)+" used / "+std::to_string(s.gpsVisible):"--");
@@ -1005,9 +1008,10 @@ void Renderer::section(const State &s){
 #include "rx_log_renderer.inc"
 #include "noise_renderer.inc"
 #include "rpt_renderer.inc"
+#include "tracks_renderer.inc"
 void Renderer::radioLinkAsk(){Rect panel=overlayPanel();c.text(Margin+8,Top+15,"Companion connected",Font::ChatTitle,FG,panel.w-16);c.text(Margin+8,Top+50,"Download the messages",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+66,"from the companion?",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+90,"No: they stay on it,",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+106,"new ones too.",Font::ChatMeta,FG,panel.w-16);c.button(RadioLinkAskNo,"NO");c.button(RadioLinkAskYes,"YES",true);}
 
 void Renderer::draw(const State &s){switch(s.page){
- case Page::RadioLink:case Page::RadioLinkSettings:case Page::WebApp:radioLinkPages(s);break;case Page::DmPath:dmPathPage(s);break;case Page::Cli:cliApp(s);break;case Page::RxLog:rxLogApp(s);break;case Page::NoiseFloor:noiseApp(s);break;case Page::RptScanner:rptApp(s);break;
+ case Page::RadioLink:case Page::RadioLinkSettings:case Page::WebApp:radioLinkPages(s);break;case Page::TracksApp:case Page::TracksSettings:tracksPages(s);break;case Page::DmPath:dmPathPage(s);break;case Page::Cli:cliApp(s);break;case Page::RxLog:rxLogApp(s);break;case Page::NoiseFloor:noiseApp(s);break;case Page::RptScanner:rptApp(s);break;
  case Page::Home:home(s);break;case Page::Launcher:launcher(s);break;case Page::Messages:messages(s);break;case Page::Chat:chat(s);break;case Page::NewChat:form(s);break;case Page::ContactPicker:contactPicker(s);break;case Page::Settings:settings(s);break;case Page::QuickSettings:quickSettings(s);break;default:section(s);}if(s.channelOptions)channelOptions(s);}
 }

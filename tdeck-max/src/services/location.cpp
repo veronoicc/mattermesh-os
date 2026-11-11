@@ -40,8 +40,9 @@ void locationBegin(ExtensionIOXL9555 &io,bool ready){
  state.available=ready;state.enabled=false;state.timeLease=false;state.userEnabled=preferences.getBool("gps_on",true);expansion=ready?&io:nullptr;
  if(ready){io.pinMode(BOARD_XL9555_02_GPS_EN,OUTPUT);if(!applyEnabled(state.userEnabled)){applyEnabled(false);state.available=false;}}
 }
+static bool held=false;// a GPS track is recording: the receiver stays powered whatever the user switch and the time lease say
 bool locationTimeLease(bool acquire){
- if(!state.available)return false;bool wanted=state.userEnabled||acquire;uint32_t now=millis();
+ if(!state.available)return false;bool wanted=state.userEnabled||acquire||held;uint32_t now=millis();
  if(wanted)offPending=false;
  // Release with a fix seen: save the navigation database first (a few seconds at most), then power off from locationLoop.
  if(!wanted&&state.enabled&&!offPending&&dumpWanted(now)&&(!dumped||uint32_t(now-lastDumpAt)>=GPS_BACKUP_BEFORE_OFF_MS)&&backup.startDump(now,clockEpoch(),sendUbx)){offPending=true;offDeadline=now+GPS_BACKUP_OFF_DEADLINE_MS;state.revision++;return true;}
@@ -50,10 +51,12 @@ bool locationTimeLease(bool acquire){
 }
 bool locationEnabled(bool enabled){
  if(!state.available)return false;offPending=false;
- bool old=state.enabled;if(enabled!=old&&!applyEnabled(enabled)){applyEnabled(old);return false;}
+ bool old=state.enabled,power=enabled||held;if(power!=old&&!applyEnabled(power)){applyEnabled(old);return false;}
  if(preferences.putBool("gps_on",enabled)!=1){applyEnabled(old);return false;}
  state.userEnabled=enabled;state.timeLease=false;state.userRevision++;state.revision++;return true;
 }
+bool locationHold(bool on){if(held==on)return true;held=on;if(!state.available)return false;if(locationTimeLease(state.timeLease))return true;held=false;return false;}
+bool locationHeld(){return held;}
 bool locationToggleUser(){return locationEnabled(!state.userEnabled);}
 int locationPowerLevel(){return expansion?expansion->digitalRead(BOARD_XL9555_02_GPS_EN):-1;}
 bool locationSet(double latitude,double longitude){if(!gpsPositionValid(latitude,longitude))return false;if(!state.fix){state.latitude=latitude;state.longitude=longitude;}state.configured=true;preferences.putDouble("latitude",latitude);preferences.putDouble("longitude",longitude);preferences.putBool("valid",true);state.revision++;return true;}

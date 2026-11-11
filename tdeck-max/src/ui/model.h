@@ -11,7 +11,7 @@
 #include "rpt_view.h"
 namespace mm {
 enum class WeatherPhaseView {Closed,WifiOff,Connecting,NoNetwork,WaitingClock,Locating,Fetching,Ready,Error};
-enum class Page { Home,Launcher,Messages,Chat,NewChat,Settings,Controls,Mesh,Radio,GPS,Maps,Weather,Info,Files,Wifi,Bluetooth,Terminal,DateTime,Updates,Battery,Power,Audio,Wallpaper,Antenna,Storage,QuickSettings,Cli,ContactPicker,Support,Keyboard,AccentKey,HomeWidgets,BesideClock,MainArea,Note,DmPath,RadioLink,RadioLinkSettings,WebApp,Motion,RxLog,NoiseFloor,RptScanner};
+enum class Page { Home,Launcher,Messages,Chat,NewChat,Settings,Controls,Mesh,Radio,GPS,Maps,Weather,Info,Files,Wifi,Bluetooth,Terminal,DateTime,Updates,Battery,Power,Audio,Wallpaper,Antenna,Storage,QuickSettings,Cli,ContactPicker,Support,Keyboard,AccentKey,HomeWidgets,BesideClock,MainArea,Note,DmPath,RadioLink,RadioLinkSettings,WebApp,Motion,RxLog,NoiseFloor,RptScanner,TracksApp,TracksSettings};
 struct Conversation { std::string name,scope,preview,time="--:--",sender,age="--";bool direct=false;int id=0,unread=0,activity=0; };
 struct Message {std::string sender,time,body,meta;bool mine;std::string path,heard,scope;int hops=-1;uint32_t token=0;int repeaters=-1;Message(std::string s="",std::string t="",std::string b="",std::string m="",bool own=false):sender(std::move(s)),time(std::move(t)),body(std::move(b)),meta(std::move(m)),mine(own){} };
 struct ContactRow {std::string name,detail;};
@@ -32,6 +32,11 @@ struct State {
  std::string rlSavedName,rlStatus,rlInput,rlPin,rlName,rlRegion,rlVersion,rlRadio,rlBattery;
  std::vector<RadioLinkPeerRow> rlPeers;
  bool webOn=false,webLinked=false;int webFocus=0;std::string webAddress,webCode,webPeer;/* MatterMesh Web (web_app.inc) */
+ // GPS tracks (app 49, Settings 50): trkView 0 list, 1 detail, 2 delete confirm; trkFocus: list 0 record card, 1.. rows; detail 0..2 actions; settings 0 switch, 1..5 rows.
+ struct TrackRow {std::string when,meta;bool live=false;};
+ bool trkSd=true,trkRecording=false,trkAuto=false,trkMap=true,trkKeepGps=true,trkLive=false;int trkInterval=10,trkDistance=10,trkView=0,trkFocus=0,trkScroll=0,trkTotal=0;
+ std::string trkStatus,trkTitle;std::vector<TrackRow> trkRows;std::vector<std::pair<std::string,std::string>> trkStats;std::vector<std::pair<int,int>> trkShape;/* trkShape: the route in pixels inside TracksShape */
+ std::vector<MapSegment> mapTrack;/* the GPS track polyline over the map */
  // CLI (30): raw output lines (wrapped when drawn), prompt, edit line, scroll in wrapped lines from the bottom.
  std::vector<std::string> cliLines;std::string cliPrompt,cliInput;int cliCursor=0,cliScroll=0;bool cliStreaming=false,cliCanPaste=false;
  std::string firstRepeater;

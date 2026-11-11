@@ -33,6 +33,7 @@ public:
  void channelKey(const State &s);
  void contactPicker(const State &s);
  void radioLinkPages(const State &s);// Settings > Companion link (41, 42)
+ void tracksPages(const State &s);// Tracks app (49) and Settings > GPS tracks (50)
  void radioLinkAsk();// over any page: download the companion's messages?
  void cliApp(const State &s);
  void rxLogApp(const State &s);// RX Log (rx_log_renderer.inc)

@@ -1,5 +1,6 @@
 #pragma once
 #include "radio_link_layout.h"
+#include "tracks_layout.h"
 #include "components.h"
 namespace mm {
 struct NavItem {const char *label;Icon icon;int section;};

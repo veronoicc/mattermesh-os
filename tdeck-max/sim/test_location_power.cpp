@@ -35,6 +35,13 @@ int main(){using namespace device;ExtensionIOXL9555 io;locationBegin(io,true);as
  assert(SerialGPS.begins==runningBegins&&SerialGPS.ends==runningEnds); // Pin ON without restarting acquisition.
  assert(locationTimeLease(false)&&locationState().enabled);
  assert(locationEnabled(false));io.failWrite=true;assert(!locationTimeLease(true)&&!locationState().enabled);io.failWrite=false;
+ // Hold (track recording): the receiver stays powered against a user OFF and a released time lease; releasing it powers off unless the user wants the GPS.
+ assert(locationEnabled(false)&&!locationState().enabled);assert(locationHold(true)&&locationState().enabled&&locationHeld()&&!locationState().userEnabled);
+ assert(locationTimeLease(true)&&locationTimeLease(false)&&locationState().enabled);// a time-sync release does not cut a recording
+ assert(locationEnabled(false)&&locationState().enabled&&!locationState().userEnabled);// OFF in Settings while recording: still powered
+ assert(locationHold(false)&&!locationState().enabled&&!locationHeld());
+ assert(locationEnabled(true)&&locationHold(true)&&locationHold(false)&&locationState().enabled&&locationState().userEnabled);// user ON is never cut
+ assert(locationEnabled(false));io.failWrite=true;assert(!locationHold(true)&&!locationHeld()&&!locationState().enabled);io.failWrite=false;
  locationBegin(io,false);assert(!locationState().available&&!locationState().enabled&&!locationEnabled(true));
  std::cout<<"PASS: GPS power/UART OFF, polling stops, cached position survives, persisted OFF startup, fresh ON/baud fallback, live fix replaces cache/fresh age/reject stale and OFF, NVS/GPIO failure rollback, unavailable hardware\n";
 }
