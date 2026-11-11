@@ -41,8 +41,10 @@ public:
  void queueInbound(mesh::Packet *p,uint32_t at)override{in.push_back({p,at,0});}
  mesh::Packet *getNextInbound(uint32_t now)override{return take(in,now);}
 };
-class Peer:public BaseChatMesh{
-public:Link link;ArduinoMillis ms;RNG rng;Clock clock;TestPool pool;SimpleMeshTables tables;uint32_t expected=0;uint8_t remote[32]={};int groups=0,directs=0,acks=0,discoveries=0,hops=-1,pathBytes=0,loginBytes=-1,loginOffset=4;bool loginExact=false;String text;
+// The radio, clock and tables are a base listed first: BaseChatMesh's constructor already calls into them.
+struct PeerParts {Link link;ArduinoMillis ms;RNG rng;Clock clock;TestPool pool;SimpleMeshTables tables;};
+class Peer:public PeerParts,public BaseChatMesh{
+public:uint32_t expected=0;uint8_t remote[32]={};int groups=0,directs=0,acks=0,discoveries=0,hops=-1,pathBytes=0,loginBytes=-1,loginOffset=4;bool loginExact=false;String text;
  Peer():BaseChatMesh(link,ms,rng,clock,pool,tables){do{self_id=mesh::LocalIdentity(&rng);}while(self_id.pub_key[0]==0||self_id.pub_key[0]==255);begin();addChannel("Public","izOH6cXN6mrJ5e26oRXNcg==");}
 protected:
  void sendFloodScoped(const ContactInfo&,mesh::Packet *p,uint32_t delay=0)override{sendMatterFlood(*this,p,delay);}
