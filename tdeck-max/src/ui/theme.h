@@ -77,10 +77,8 @@ inline int settingsLastVisible(int scroll){int i=scroll;while(i+1<SettingsCount&
 constexpr Rect SettingsSwitch={Margin,Top+6,W-2*Margin,40};
 constexpr int SettingsSectionY=Top+54,SettingsBodyY=Top+70;
 inline Rect settingsHalf(int column,int y,int h=40){return {column?W/2+3:Margin,y,(W-2*Margin-6)/2,h};}
-// Settings > Donate / Unlock (section 31, between OTA update and About): Donate / Extra apps tabs and the QR of the
-// selected one, the text below it.
-constexpr int SupportSection=31,SupportQrY=Top+42;
-inline Rect supportTabRect(int i){return settingsHalf(i,Top+6,28);}
+// Settings > Donate (section 31, between OTA update and About): the ko-fi QR and the text below it.
+constexpr int SupportSection=31;
 constexpr Rect GpsToggle=SettingsSwitch;
 constexpr Rect UpdatesAction={Margin,Top+200,W-2*Margin,34};
 // Date / time: SET MANUALLY, then fields day/month/year on one row and hour/minute below, -/+ and SAVE/CANCEL.

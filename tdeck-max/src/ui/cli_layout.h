@@ -3,8 +3,8 @@
 // CLI app (section 30).
 namespace mm {
 constexpr int CliSection=30;
-// Sections served by the tools hooks (main.cpp): the CLI.
-inline bool toolsSection(int section){return section==CliSection;}
+// Sections served by the tools hooks (main.cpp): the CLI and the field tools (RX Log, Noise Floor, RPT Scanner).
+inline bool toolsSection(int section){return section==CliSection||section==RxLogSection||section==NoiseFloorSection||section==RptScannerSection;}
 // CLI: terminal text above a toolbar (TAB, up, down, left, right, PASTE | CLEAR, STOP).
 constexpr int CliToolCount=8,CliLineH=13;
 constexpr Rect CliBar={Margin-4,H-36,W-2*Margin+8,32};

@@ -141,6 +141,7 @@ static void trackTX(uint32_t token,bool direct){for(auto &t:outgoing)if(!t.packe
 static bool dmQueued(uint32_t token){for(auto &t:outgoing)if(t.token==token&&t.packet)for(int i=0;i<pool.getOutboundTotal();i++)if(pool.getOutboundByIdx(i)==t.packet)return true;return false;}
 static void txFinished(mesh::Packet *packet,bool success){for(auto &t:outgoing)if(t.packet==packet){Delivery d;d.txComplete=true;d.txSuccess=success;d.token=t.token;d.state=success?(t.direct?(pending.active&&pending.token==t.token?pending.route+": sent, awaiting ACK":String("Sent / awaiting ACK")):"Sent / no group ACK"):"TX failed";deliveredCallback(d);if(t.direct&&pending.active&&pending.token==t.token){pending.transmitted=success;pending.deadline=millis()+pending.timeout;if(!success)pending.active=false;}t.packet=nullptr;break;}}
 
+static void rptCommandReply(const ContactInfo &c,const char *text);// RPT Scanner console (block at the end of this file)
 // Companion app link (companion.inc, end of file): messages for the app's offline queue, ACKs of the app's sends.
 namespace companion {void queueContact(const ContactInfo &from,mesh::Packet *pkt,uint32_t ts,const char *text,uint8_t txtType=0,const uint8_t *prefix=nullptr);void queueChannel(int idx,mesh::Packet *pkt,uint32_t ts,const char *text);void ackReceived(const uint8_t *data);void logRaw(float snr,float rssi,const uint8_t *raw,int len);
  void contactResponse(const ContactInfo &from,const uint8_t *data,uint8_t len);void controlData(const mesh::Packet *packet,float snr,float rssi);
@@ -187,7 +188,7 @@ protected:
  void onContactPathUpdated(const ContactInfo &c)override{dmRouteApply(const_cast<ContactInfo&>(c));/* a manual path stays */companion::pathUpdated(c);contactsDirty=true;saveAt=millis();}
  ContactInfo *processAck(const uint8_t *data)override{companion::ackReceived(data);uint32_t ack;memcpy(&ack,data,4);if(pending.active&&(pending.ack==ack||(pending.firstAck&&pending.firstAck==ack))){auto contact=lookupContactByPubKey(pending.key,32);Delivery d;d.token=pending.token;d.state=pending.route+": delivered";deliveredCallback(d);pending.active=false;return contact;}return checkConnectionsAck(data);}
  void onMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *t)override{markConnectionActive(c);deliver(c,p,ts,t,nullptr,c.type!=ADV_TYPE_REPEATER);}// a repeater's plain message is the app's only (its CLI replies come through onCommandDataRecv)
- void onCommandDataRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *text)override{markConnectionActive(c);companion::queueContact(c,p,ts,text,1);}// CLI reply of a server: the app's queue only
+ void onCommandDataRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *text)override{markConnectionActive(c);rptCommandReply(c,text);companion::queueContact(c,p,ts,text,1);}// CLI reply of a server: the app's queue, and the RPT Scanner console when it asked
  void onCLICommandRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *command,char *reply)override{markConnectionActive(c);companion::remoteCli(c,p,ts,command,reply);}// opt-in, see remote_cli.h
  void onSignedMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const uint8_t *prefix,const char *t)override{markConnectionActive(c);contactsDirty=true;saveAt=millis();deliver(c,p,ts,t,prefix);}// room post: the app's queue as txt_type 2 and the chat, once
  void onChannelMessageRecv(const mesh::GroupChannel &ch,mesh::Packet *p,uint32_t ts,const char *t)override{
@@ -281,6 +282,8 @@ void loop(){if(!state.ready||state.suspended)return;chatMesh().loop();driver.loo
  if(pending.active&&!pending.transmitted&&millis()-pending.queuedAt>60000&&!dmQueued(pending.token)){Delivery d;d.token=pending.token;d.state="TX failed";deliveredCallback(d);pending.active=false;}/* gone from the queue untransmitted (a slow duty-cycle wait is not a failure) */if(contactsDirty&&millis()-lastContactsAttempt>=3000&&(millis()-saveAt>3000||millis()-lastContactsSave>=120000)&&!busy()){lastContactsAttempt=millis();if(chatMesh().saveContacts()){lastContactsSave=millis();contactsDirty=false;}}}
 RadioLevels radioLevels(){RadioLevels l;if(!state.ready)return l;l.noiseFloor=driver.getNoiseFloor();if(auto p=rxPackets.newest(0)){l.received=true;l.rssi=p->rssi();l.snr=p->snr();}return l;}
 RadioDiag radioDiag(){RadioDiag d;d.tcxo=tcxoVoltage;d.noiseFloor=driver.getNoiseFloor();d.received=driver.getPacketsRecv();d.recvErrors=driver.getPacketsRecvErrors();if(state.ready){d.boosted=radio.getRxBoostedGainMode();d.deviceErrors=radio.getDeviceErrors();if(d.received){d.rssi=driver.getLastRSSI();d.snr=driver.getLastSNR();}}/* SPI reads: not on a sleeping SX1262 */return d;}
+// Noise Floor app: the SX1262 instantaneous RSSI over SPI, only from an idle RX radio (not asleep, transmitting or mid-packet); never blocks.
+RssiSample radioSampleRssi(float &dbm,int &floorDbm){floorDbm=state.ready?driver.getNoiseFloor():0;if(!state.ready)return RssiSample::Offline;if(state.suspended)return RssiSample::Suspended;if(state.tx||!driver.isInRecvMode()||driver.isReceivingPacket())return RssiSample::Busy;dbm=driver.getCurrentRSSI();return RssiSample::Ok;}
 bool radioClearErrors(){return state.ready&&!state.suspended&&radio.clearDeviceErrors()==RADIOLIB_ERR_NONE;}
 RadioCounters radioCounters(){RadioCounters c;c.ready=state.ready;c.received=driver.getPacketsRecv();c.sent=driver.getPacketsSent();return c;}// no Config copy (the node name String)
 Snapshot snapshot(){state.nodes=meshPtr?chatMesh().getNumContacts():0;state.received=driver.getPacketsRecv();state.sent=driver.getPacketsSent();state.errors=driver.getPacketsRecvErrors();state.rx=state.ready&&!state.suspended&&driver.isInRecvMode();state.queued=pool.getOutboundTotal();return state;} // rssi/snr are captured in logRx, no SPI reads per poll
@@ -404,5 +407,70 @@ void ChatMesh::recordRx(mesh::Packet *packet,int len){
  p.rssiTenths=int16_t(lroundf(driver.getLastRSSI()*10));p.snrTenths=int16_t(lroundf(packet->getSNR()*10));rxPackets.push(p);
 }
 const RxLog &rxLog(){return rxPackets;}
+void rxLogClear(){rxPackets.clear();}
+// RPT Scanner: zero-hop repeater discovery (control data DISCOVER_REQ, as MeshCore's companion UI sends it) and requests to
+// one repeater (trace ping, status, login, CLI text). One request at a time; the answers are matched in the callbacks
+// below (companion.inc forwards control data, responses and traces) and read by the app through rptResult() and rptReply().
+static bool rptScanning=false;static uint32_t rptScanTag=0,rptScanAt=0,rptScanListen=0,rptChanges=0,rptTag=0,rptSentAt=0,rptDeadline=0;static std::vector<RptFound> rptHeard;
+static RptResult rptOut;static uint8_t rptKey[32]={},rptCmdKey[32]={};static bool rptCmdKnown=false;static std::vector<String> rptReplies;
+static void rptPoll(){
+ if(rptScanning&&uint32_t(millis()-rptScanAt)>=rptScanListen){rptScanning=false;rptChanges++;}
+ if(rptOut.state==1&&int32_t(millis()-rptDeadline)>=0){rptOut.state=3;rptOut.text=rptOut.op==RptOp::Login?"No reply: wrong password or out of range":rptOut.op==RptOp::Ping?"No echo: not in direct range?":"No reply";rptChanges++;}
+}
+static bool rptReady(String &reason){
+ if(state.suspended){reason="Radio off (companion link)";return false;}
+ if(!state.ready||!meshPtr){reason="Radio offline";return false;}
+ if(pool.getOutboundTotal()>8){reason="TX queue full";return false;}
+ return true;}
+static ContactInfo *rptContact(const String &key,String &reason){uint8_t pub[32];if(!unhex(key,pub,32)){reason="Invalid key";return nullptr;}auto c=chatMesh().lookupContactByPubKey(pub,32);if(!c)reason="Not in contacts: wait for its advert";return c;}
+// The contact to ask, with the request slot free.
+static ContactInfo *rptTarget(const String &key,String &reason){rptPoll();if(!rptReady(reason))return nullptr;if(rptOut.state==1){reason="Request running";return nullptr;}return rptContact(key,reason);}
+static void rptArm(RptOp op,const String &key,const ContactInfo &c,uint32_t timeoutMs){rptOut=RptResult();rptOut.op=op;rptOut.state=1;rptOut.key=key;memcpy(rptKey,c.id.pub_key,32);rptSentAt=millis();rptDeadline=rptSentAt+timeoutMs;rptChanges++;}
+static uint32_t rptWait(uint32_t estimate){return std::max<uint32_t>(8000,estimate*2+3000);}
+std::vector<RptRepeater> rptRepeaters(){std::vector<RptRepeater> out;for(int i=0;i<discoveredCount;i++)if(discovered[i].type==ADV_TYPE_REPEATER){RptRepeater r;r.node=toNode(discovered[i]);r.contact=discovered[i].book;out.push_back(r);}return out;}
+bool rptScan(uint32_t listenMs,String &reason){
+ rptPoll();if(rptScanning){reason="Scan running";return false;}if(!rptReady(reason))return false;
+ uint32_t tag=0;while(!tag)chatMesh().getRNG()->random(reinterpret_cast<uint8_t*>(&tag),4);
+ uint8_t data[6];size_t n=rptDiscoverRequest(data,tag);auto pkt=chatMesh().createControlData(data,n);if(!pkt){reason="TX queue full";return false;}
+ chatMesh().sendZeroHop(pkt);rptHeard.clear();rptScanTag=tag;rptScanAt=millis();rptScanListen=listenMs;rptScanning=true;rptChanges++;reason="Scan sent";return true;}
+RptScanState rptScanState(){rptPoll();RptScanState s;s.active=rptScanning;s.startedAt=rptScanAt;s.listenMs=rptScanListen;s.count=int(rptHeard.size());return s;}
+std::vector<RptFound> rptFound(){return rptHeard;}
+bool rptPing(const String &key,String &reason){
+ auto c=rptTarget(key,reason);if(!c)return false;
+ uint32_t tag=0;chatMesh().getRNG()->random(reinterpret_cast<uint8_t*>(&tag),4);const uint8_t flags=1;/* two byte hashes: the trace path is the repeater's hash alone */
+ auto pkt=chatMesh().createTrace(tag,0,flags);if(!pkt){reason="TX queue full";return false;}
+ chatMesh().sendDirect(pkt,c->id.pub_key,2);rptArm(RptOp::Ping,key,*c,chatMesh().traceTimeout(int(pkt->payload_len+pkt->path_len+2),1)+2000);rptTag=tag;reason="Ping sent";return true;}
+bool rptStatus(const String &key,String &reason){
+ auto c=rptTarget(key,reason);if(!c)return false;
+ uint32_t tag=0,timeout=0;if(chatMesh().sendRequest(*c,uint8_t(REQ_TYPE_GET_STATUS),tag,timeout)==MSG_SEND_FAILED){reason="TX queue full";return false;}
+ rptArm(RptOp::Status,key,*c,rptWait(timeout));reason="Status requested";return true;}
+bool rptLogin(const String &key,const String &password,String &reason){
+ auto c=rptTarget(key,reason);if(!c)return false;
+ uint32_t timeout=0;if(chatMesh().sendLogin(*c,password.c_str(),timeout)==MSG_SEND_FAILED){reason=password.length()>MAX_LOGIN_PASSWORD_LEN?"Password too long":"TX queue full";return false;}
+ rptArm(RptOp::Login,key,*c,rptWait(timeout));reason="Login sent";return true;}
+bool rptCommand(const String &key,const String &command,String &reason){
+ if(!rptReady(reason))return false;if(!command.length()||command.length()>MAX_TEXT_LEN){reason="Command empty or too long";return false;}
+ auto c=rptContact(key,reason);if(!c)return false;
+ uint32_t timeout=0;int result=chatMesh().sendCommandData(*c,clock.getCurrentTimeUnique(),0,TXT_TYPE_CLI_DATA,command.c_str(),timeout);if(result==MSG_SEND_FAILED){reason="TX queue full";return false;}
+ memcpy(rptCmdKey,c->id.pub_key,32);rptCmdKnown=true;reason=result==MSG_SEND_SENT_FLOOD?"Sent by flood":"Sent direct";return true;}
+bool rptReply(String &out){if(rptReplies.empty())return false;out=rptReplies.front();rptReplies.erase(rptReplies.begin());return true;}
+RptResult rptResult(){rptPoll();return rptOut;}
+uint32_t rptRevision(){rptPoll();return rptChanges;}
+void rptReset(){rptScanning=false;rptHeard.clear();rptHeard.shrink_to_fit();rptOut=RptResult();rptReplies.clear();rptReplies.shrink_to_fit();rptCmdKnown=false;rptChanges++;}
+static void rptControl(const mesh::Packet *p,float snr,float rssi){
+ if(!rptScanning)return;RptDiscoverReply r;if(!rptParseDiscover(p->payload,p->payload_len,rptScanTag,r))return;
+ String prefix=hex(r.key,8);for(auto &f:rptHeard)if(f.prefix==prefix)return;/* a repeater counts once per scan */
+ if(rptHeard.size()>=64)return;RptFound f;f.prefix=prefix;f.snrIn=snr;f.snrOut=r.snrOut;f.rssi=rssi;f.at=millis();rptHeard.push_back(f);rptChanges++;}
+static void rptTrace(const mesh::Packet *p,uint32_t tag,uint8_t flags,const uint8_t *snrs,const uint8_t *hashes,uint8_t len){
+ if(rptOut.op!=RptOp::Ping||rptOut.state!=1)return;float out=0;if(!rptParsePing(rptTag,tag,flags,snrs,hashes,len,rptKey,out))return;
+ rptOut.snrOut=out;rptOut.snrIn=p->getSNR();rptOut.roundTripMs=millis()-rptSentAt;rptOut.state=2;rptChanges++;}
+static void rptResponse(const ContactInfo &from,const uint8_t *data,uint8_t len){
+ if(rptOut.state!=1||memcmp(from.id.pub_key,rptKey,32))return;
+ if(rptOut.op==RptOp::Login){bool admin=false;if(!rptParseLogin(data,len,admin))return;rptOut.admin=admin;rptOut.text=admin?"Admin":"Guest";}
+ else if(rptOut.op==RptOp::Status){if(len<=4||!rptParseStats(data+4,len-4,rptOut.stats)){rptOut.state=3;rptOut.text="Unexpected status reply";rptChanges++;return;}}
+ else return;
+ rptOut.roundTripMs=millis()-rptSentAt;rptOut.state=2;rptChanges++;}
+static void rptCommandReply(const ContactInfo &c,const char *text){
+ if(!rptCmdKnown||memcmp(c.id.pub_key,rptCmdKey,32))return;if(rptReplies.size()>=16)rptReplies.erase(rptReplies.begin());rptReplies.push_back(String(text));rptChanges++;}
 #include "companion.inc"
 }

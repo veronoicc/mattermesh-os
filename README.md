@@ -79,7 +79,7 @@ is ignored for the other languages.
 ## Support
 
 MatterMesh OS is free and has no ads. If you find it useful, you can support it with a donation of any amount at
-[ko-fi.com/mattermeshos](https://ko-fi.com/mattermeshos) — on the device: Settings → Donate / Unlock.
+[ko-fi.com/mattermeshos](https://ko-fi.com/mattermeshos) — on the device: Settings → Donate.
 
 ## License
 

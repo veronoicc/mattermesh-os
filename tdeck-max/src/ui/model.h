@@ -6,9 +6,12 @@
 #include "mesh/message_limits.h"
 #include "home_widgets.h"
 #include "services/home_data.h"
+#include "rx_log_view.h"
+#include "noise_view.h"
+#include "rpt_view.h"
 namespace mm {
 enum class WeatherPhaseView {Closed,WifiOff,Connecting,NoNetwork,WaitingClock,Locating,Fetching,Ready,Error};
-enum class Page { Home,Launcher,Messages,Chat,NewChat,Settings,Controls,Mesh,Radio,GPS,Maps,Weather,Info,Files,Wifi,Bluetooth,Terminal,DateTime,Updates,Battery,Power,Audio,Wallpaper,Antenna,Storage,QuickSettings,Cli,ContactPicker,Support,Keyboard,AccentKey,HomeWidgets,BesideClock,MainArea,Note,DmPath,RadioLink,RadioLinkSettings,WebApp,Motion};
+enum class Page { Home,Launcher,Messages,Chat,NewChat,Settings,Controls,Mesh,Radio,GPS,Maps,Weather,Info,Files,Wifi,Bluetooth,Terminal,DateTime,Updates,Battery,Power,Audio,Wallpaper,Antenna,Storage,QuickSettings,Cli,ContactPicker,Support,Keyboard,AccentKey,HomeWidgets,BesideClock,MainArea,Note,DmPath,RadioLink,RadioLinkSettings,WebApp,Motion,RxLog,NoiseFloor,RptScanner};
 struct Conversation { std::string name,scope,preview,time="--:--",sender,age="--";bool direct=false;int id=0,unread=0,activity=0; };
 struct Message {std::string sender,time,body,meta;bool mine;std::string path,heard,scope;int hops=-1;uint32_t token=0;int repeaters=-1;Message(std::string s="",std::string t="",std::string b="",std::string m="",bool own=false):sender(std::move(s)),time(std::move(t)),body(std::move(b)),meta(std::move(m)),mine(own){} };
 struct ContactRow {std::string name,detail;};
@@ -32,6 +35,7 @@ struct State {
  // CLI (30): raw output lines (wrapped when drawn), prompt, edit line, scroll in wrapped lines from the bottom.
  std::vector<std::string> cliLines;std::string cliPrompt,cliInput;int cliCursor=0,cliScroll=0;bool cliStreaming=false,cliCanPaste=false;
  std::string firstRepeater;
+ RxLogView rxl;NoiseView noise;RptView rpt;// field tools (RX Log, Noise Floor, RPT Scanner): filled by their *_app.inc compose hooks
  int vibrationPercent=75;
  bool displayLightEnabled=true,keyboardLightEnabled=true;
  bool audioTranscribing=false,offlineEngineCompiled=false;int audioSeconds=0;bool audioReady=false,audioNotifications=true,audioRecording=false,audioWarming=false;int audioVolume=20;std::string audioMessage;
@@ -92,7 +96,6 @@ bool batteryEstimated=false,batteryCharging=false,batteryFull=false;
  bool channelOptions=false,deleteChannelConfirm=false,channelOptionMuted=false,channelOptionDirect=false,positionShare=false;
  int channelOptionFocus=0;std::string channelOptionName,positionCoordinates,positionMessage;
  std::vector<ContactRow> pickerRows;int pickerFocus=0,pickerTotal=0,pickerStart=0;bool pickerSearching=false;std::string pickerQuery;
- bool extraAppsUnlocked=false;std::string unlockCode;int supportTab=0;// Settings > Donate / Unlock: 0 Donate, 1 Extra apps (QR + unlock code)
  bool channelKeyView=false;std::string channelKeyHex,channelKeyScope;int qrSize=0;std::vector<uint8_t> qrModules;
  // -2: infer from the complete thread; -1: latest own message is filtered out.
  int latestOwnMessage=-2;

@@ -9,8 +9,6 @@ enum class OtaPhase:uint8_t {Idle,Checking,UpToDate,Available,Downloading,Verify
 struct OtaState {OtaPhase phase=OtaPhase::Idle;String message,version,notes,server;int32_t code=0;uint32_t size=0,done=0,checkedAt=0,revision=0;bool rolledBack=false,installed=false;int32_t refused=0;};// refused: build no longer offered (two rollbacks)
 constexpr uint32_t OTA_FIRST_CHECK_MS=20000UL,OTA_CHECK_EVERY_MS=6UL*3600UL*1000UL,OTA_HEALTHY_AFTER_MS=30000UL;
 const char *otaBoard();
-String otaUnlockCode();
-bool otaAppsUnlocked();// Full image with a valid license for this T-Deck; false on the Free image// XXXX-XXXX: identifies this T-Deck in a Ko-fi order (apps unlock)
 void otaBegin();
 // uiReady: the UI painted at least once. Marks the running image healthy, reports to the server and schedules checks.
 void otaLoop(bool wifiConnected,bool uiReady);

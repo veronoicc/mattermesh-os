@@ -5,6 +5,7 @@
 #include "flood_policy.h"
 #include "message_limits.h"
 #include "rx_log.h"
+#include "rpt_wire.h"
 #include <FS.h>
 #include <ExtensionIOXL9555.hpp>
 #include <vector>
@@ -21,6 +22,8 @@ struct RadioDiag {float tcxo=0,rssi=0,snr=0;bool boosted=false;uint16_t deviceEr
 RadioDiag radioDiag();bool radioClearErrors();
 // Noise floor (MeshCore calibrates it every few seconds) and the last packet's signal, no SPI access.
 struct RadioLevels {int noiseFloor=0;float rssi=0,snr=0;bool received=false;};RadioLevels radioLevels();
+// Noise Floor app: one instantaneous RSSI sample (dBm) and the calibrated floor (0 = unknown) for the main loop task; anything but Ok leaves dbm alone (a gap on the chart).
+enum class RssiSample : uint8_t {Ok,Offline,Suspended,Busy};RssiSample radioSampleRssi(float &dbm,int &floorDbm);
 struct RadioCounters {bool ready=false;uint32_t received=0,sent=0;};// the main loop polls these every iteration
 void loop();Snapshot snapshot();RadioCounters radioCounters();std::vector<Node> nodes(int filter,int offset=0,int limit=NODE_CAPACITY);int nodeCount(int filter=0);
 // Contacts page: live nodes first (most recently heard), then saved ones by name; `query` filters names case-insensitively.
@@ -74,6 +77,7 @@ bool syncClock(uint32_t epoch,String &reason);
 String ownKey();
 // Every packet the radio decoded, newest first (CLI "log start").
 const RxLog &rxLog();
+void rxLogClear();// forgets the stored packets (RX Log app, Clear log); sequence numbers keep counting
 // MeshCore companion app protocol over BLE, USB and Wi-Fi (src/mesh/companion.inc). One command frame in, replies
 // through `write`; companionPump() streams a running contact listing one frame per call.
 constexpr size_t COMPANION_FRAME_MAX=176;
@@ -97,4 +101,17 @@ size_t companionStatsLine(char *out,size_t cap);// "COMPANION_STATS ..." debug l
 void companionAirTrace(bool on);// serial "companion trace on|off": one AIR_TX / AIR_RX line per radio packet
 void companionFrame(CompanionSession &session,const uint8_t *frame,size_t len,CompanionWriter write,void *ctx);
 bool companionPump(CompanionSession &session,CompanionWriter write,void *ctx);
+// RPT Scanner app (rpt_app.inc): every repeater heard (saved or only cached), a zero-hop discovery and requests to one repeater.
+// The answers arrive in the mesh loop; the app polls rptRevision() and reads the results, nothing here waits.
+struct RptRepeater {Node node;bool contact=false;};// contact: a saved contact, so it can be asked (login, status, console)
+std::vector<RptRepeater> rptRepeaters();
+struct RptFound {String prefix;float snrIn=0,snrOut=0,rssi=0;uint32_t at=0;};// prefix: first 16 hex of the key; snrIn: heard here, snrOut: heard by the repeater
+struct RptScanState {bool active=false;uint32_t startedAt=0,listenMs=0;int count=0;};
+bool rptScan(uint32_t listenMs,String &reason);RptScanState rptScanState();std::vector<RptFound> rptFound();
+enum class RptOp : uint8_t {None,Ping,Status,Login};
+// state: 0 idle, 1 waiting for the answer, 2 answered, 3 failed (text says why)
+struct RptResult {RptOp op=RptOp::None;int state=0;uint32_t roundTripMs=0;String key,text;float snrOut=0,snrIn=0;bool admin=false;RptStats stats;};
+bool rptPing(const String &key,String &reason);bool rptStatus(const String &key,String &reason);bool rptLogin(const String &key,const String &password,String &reason);
+bool rptCommand(const String &key,const String &command,String &reason);bool rptReply(String &out);// console: the next reply text of the repeater
+RptResult rptResult();uint32_t rptRevision();void rptReset();
 }

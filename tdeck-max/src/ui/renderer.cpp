@@ -621,11 +621,9 @@ void Renderer::settings(const State &s){
    case HomeWidgetsSection:return "Beside clock: "+std::string(widgetInfo(s.homeWidget).name);
    case 21:return std::string("Dictation: ")+device::dictationLanguageName(s.dictationLanguage);case 20:return "Light timers / auto lock";case 5:return s.status.battery<0?"--%":std::to_string(s.status.battery)+"%";
    case 16:return s.timeSource;case 24:return s.sd?"SD available":"No SD";case 11:return "USB diagnostics";case 17:return "Update your firmware";
-   case SupportSection:return s.extraAppsUnlocked?"Support the project":"Support the project, Extra apps";default:return "Version "+s.version;}};
+   case SupportSection:return "Support the project";default:return "Version "+s.version;}};
   std::string detail=detailFor(SettingsItems[i].section);
-  // Full image with the Extra apps unlocked: the entry is only for donations.
-  const char *label=SettingsItems[i].section==SupportSection&&s.extraAppsUnlocked?"Donate":SettingsItems[i].label;
-  c.menuRow(r,SettingsItems[i].icon,label,detail,s.settingsFocus==i);
+  c.menuRow(r,SettingsItems[i].icon,SettingsItems[i].label,detail,s.settingsFocus==i);
  }
  // Scroll indicator like the Home conversation list: thin track + 3 px thumb right of the cards.
  if(int max=settingsMaxScroll();max>0){int track=Bottom-SettingsListY,total=settingsContentY(SettingsCount-1)+SettingsCardH,thumb=std::max(12,track*track/total),offset=std::min(s.settingsOffset,max);
@@ -633,7 +631,7 @@ void Renderer::settings(const State &s){
 }
 void Renderer::section(const State &s){
  const char *title="MatterMesh OS";
- switch(s.page){case Page::Antenna:title="Antenna";break;case Page::HomeWidgets:title="Home widgets";break;case Page::BesideClock:title="Beside clock";break;case Page::MainArea:title="Main area";break;case Page::Note:title="Note";break;case Page::Storage:title="Storage";break;case Page::Controls:title="Lights / vibration";break;case Page::Audio:title="Sound / dictation";break;case Page::Power:title="Power / timeouts";break;case Page::Wallpaper:title="Wallpaper";break;case Page::Keyboard:title="Keyboard languages";break;case Page::AccentKey:title="Accent key";break;case Page::Mesh:title="Contacts";break;case Page::Radio:title="LoRa";break;case Page::GPS:title="GPS";break;case Page::Maps:title="Maps";break;case Page::Weather:title="Weather";break;case Page::Info:title="About";break;case Page::Support:title=s.extraAppsUnlocked?"Donate":"Donate / Unlock";break;case Page::Files:title="Files";break;case Page::Wifi:title="Wi-Fi";break;case Page::Bluetooth:title="Bluetooth";break;case Page::Terminal:title="Diagnostics";break;case Page::DateTime:title="Date / time";break;case Page::Updates:title="OTA update";break;case Page::Battery:title="Battery";break;default:break;}
+ switch(s.page){case Page::Antenna:title="Antenna";break;case Page::HomeWidgets:title="Home widgets";break;case Page::BesideClock:title="Beside clock";break;case Page::MainArea:title="Main area";break;case Page::Note:title="Note";break;case Page::Storage:title="Storage";break;case Page::Controls:title="Lights / vibration";break;case Page::Audio:title="Sound / dictation";break;case Page::Power:title="Power / timeouts";break;case Page::Wallpaper:title="Wallpaper";break;case Page::Keyboard:title="Keyboard languages";break;case Page::AccentKey:title="Accent key";break;case Page::Mesh:title="Contacts";break;case Page::Radio:title="LoRa";break;case Page::GPS:title="GPS";break;case Page::Maps:title="Maps";break;case Page::Weather:title="Weather";break;case Page::Info:title="About";break;case Page::Support:title="Donate";break;case Page::Files:title="Files";break;case Page::Wifi:title="Wi-Fi";break;case Page::Bluetooth:title="Bluetooth";break;case Page::Terminal:title="Diagnostics";break;case Page::DateTime:title="Date / time";break;case Page::Updates:title="OTA update";break;case Page::Battery:title="Battery";break;default:break;}
  if(s.page==Page::Motion)title="Motion / compass";
  if(s.page==Page::Maps){g.fillScreen(BG);c.statusBar(s.status);}else{shell(s,title);g.fillRect(W-32,StatusH,32,HeaderH-1,BG);}// Maps: no header, the map takes the page
  auto valueCard=[&](Rect r,const std::string &label,const std::string &value){c.card(r);c.text(r.x+7,r.y+4,label,Font::ChatMeta);c.text(r.x+7,r.y+20,value,Font::Bold,FG,r.w-14);};
@@ -952,18 +950,13 @@ void Renderer::section(const State &s){
   const char *labels[]={"MeshCore","Device","Radio","Build","Commit","Memory","Hardware"};const std::string values[]={s.meshCoreVersion,"T-Deck Max 240x320",s.radioReady?"SX1262 / MeshCore":"SX1262 / offline",s.build,s.commit,std::to_string(s.flashMB)+" MB / "+std::to_string(s.heapKB)+" KB free",s.touch&&s.keyboard&&s.hapticReady?"Touch, keys, haptic OK":std::string(s.touch?"":"touch ")+(s.keyboard?"":"keys ")+(s.hapticReady?"":"haptic ")+"missing"};
   for(int i=0;i<7;i++){int y=r.y+4+i*15;c.text(r.x+7,y,labels[i],Font::ChatMeta);c.text(r.x+72,y,values[i],Font::ChatMeta,FG,r.w-79);}
  }else if(s.page==Page::Support){
-  // Donate / Extra apps tabs, then the QR of the selected one on a quiet zone of 2 modules and its text below. The
-  // URLs are constants: each QR is encoded once. With the Extra apps unlocked (the usual Full image) there is nothing to buy: no tabs, Donate only.
-  static std::vector<uint8_t> donateQr,unlockQr;static const int donateN=encodeQr(DonateUrl,donateQr),unlockN=encodeQr(UnlockUrl,unlockQr);
-  const bool tabs=!s.extraAppsUnlocked;const int qrY=tabs?SupportQrY:Top+8;
-  if(tabs){const char *names[]={"DONATE","EXTRA APPS"};for(int i=0;i<2;i++)c.button(supportTabRect(i),names[i],s.supportTab==i);}
-  const bool unlock=tabs&&s.supportTab==1;const std::vector<uint8_t> &modules=unlock?unlockQr:donateQr;
-  const int n=unlock?unlockN:donateN,scale=n?std::min(3,(W-2*Margin)/(n+4)):0,side=(n+4)*scale,x0=(W-side)/2,y0=qrY;
+  // The ko-fi QR on a quiet zone of 2 modules, its text below. The URL is a constant: encoded once.
+  static std::vector<uint8_t> modules;static const int n=encodeQr(DonateUrl,modules);
+  const int scale=n?std::min(3,(W-2*Margin)/(n+4)):0,side=(n+4)*scale,x0=(W-side)/2,y0=Top+8;
   if(n){g.fillRect(x0,y0,side,side,BG);for(int y=0;y<n;y++)for(int x=0;x<n;x++)if(modules[y*n+x])g.fillRect(x0+(x+2)*scale,y0+(y+2)*scale,scale,scale,FG);}
-  const int w=W-2*Margin;int y=n?y0+side+8:qrY+8;
+  const int w=W-2*Margin;int y=n?y0+side+8:y0+8;
   auto para=[&](const std::string &text,Font f,int step){for(auto &line:c.lines(text,w,f)){c.centered(Margin,y,w,line,f);y+=step;}};
-  if(unlock){para("Every Extra app, today and future ones. The list: mattermeshos.com/#apps",Font::ChatMeta,14);y+=4;c.centered(Margin,y,w,"Your unlock code",Font::ChatMeta);c.centered(Margin,y+15,w,s.unlockCode,Font::ChatTitle);y+=40;para("Buy on Ko-fi, then redeem at mattermeshos.com/unlock",Font::ChatMeta,14);}
-  else{para("MatterMesh OS is free. A donation of any amount on Ko-fi helps hardware and field tests.",Font::ChatMeta,14);y+=4;para("ko-fi.com/mattermeshos",Font::ChatMeta,14);}
+  para("MatterMesh OS is free. A donation of any amount on Ko-fi helps hardware and field tests.",Font::ChatMeta,14);y+=4;para("ko-fi.com/mattermeshos",Font::ChatMeta,14);
  }else if(s.page==Page::Battery){
   c.icon(Icon::Battery,(W-32)/2,Top+10,32);c.centered(Margin,Top+50,W-2*Margin,s.status.battery<0?"--%":std::to_string(s.status.battery)+"%",Font::Clock);
   c.sectionLabel(Top+108,"DETAILS");valueCard(settingsHalf(0,Top+124),"VOLTAGE",s.voltage<0?"--":std::to_string(s.voltage)+" mV");
@@ -1009,9 +1002,12 @@ void Renderer::section(const State &s){
 #include "cli_renderer.inc"
 #include "dm_path_renderer.inc"
 #include "radio_link_renderer.inc"
+#include "rx_log_renderer.inc"
+#include "noise_renderer.inc"
+#include "rpt_renderer.inc"
 void Renderer::radioLinkAsk(){Rect panel=overlayPanel();c.text(Margin+8,Top+15,"Companion connected",Font::ChatTitle,FG,panel.w-16);c.text(Margin+8,Top+50,"Download the messages",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+66,"from the companion?",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+90,"No: they stay on it,",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+106,"new ones too.",Font::ChatMeta,FG,panel.w-16);c.button(RadioLinkAskNo,"NO");c.button(RadioLinkAskYes,"YES",true);}
 
 void Renderer::draw(const State &s){switch(s.page){
- case Page::RadioLink:case Page::RadioLinkSettings:case Page::WebApp:radioLinkPages(s);break;case Page::DmPath:dmPathPage(s);break;case Page::Cli:cliApp(s);break;
+ case Page::RadioLink:case Page::RadioLinkSettings:case Page::WebApp:radioLinkPages(s);break;case Page::DmPath:dmPathPage(s);break;case Page::Cli:cliApp(s);break;case Page::RxLog:rxLogApp(s);break;case Page::NoiseFloor:noiseApp(s);break;case Page::RptScanner:rptApp(s);break;
  case Page::Home:home(s);break;case Page::Launcher:launcher(s);break;case Page::Messages:messages(s);break;case Page::Chat:chat(s);break;case Page::NewChat:form(s);break;case Page::ContactPicker:contactPicker(s);break;case Page::Settings:settings(s);break;case Page::QuickSettings:quickSettings(s);break;default:section(s);}if(s.channelOptions)channelOptions(s);}
 }

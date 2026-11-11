@@ -65,7 +65,7 @@ void logRaw(float snr,float rssi,const uint8_t *raw,int len){if(!appSeen||!logs|
 static void pushFrame(const uint8_t *frame,size_t n){if(!appSeen||!logs||!n||n>COMPANION_FRAME_MAX)return;auto &l=logs[logSeq%LogMax];memcpy(l.b,frame,n);l.len=uint8_t(n);logSeq++;}
 // The app's pending requests: anonymous and binary (one slot, as MeshCore), login, status, telemetry, path discovery.
 static companion_remote::Pending pend;
-void controlData(const mesh::Packet *packet,float snr,float rssi){uint8_t f[COMPANION_FRAME_MAX];pushFrame(f,companion_air::controlFrame(packet,snr,rssi,f,sizeof(f)));}
+void controlData(const mesh::Packet *packet,float snr,float rssi){rptControl(packet,snr,rssi);uint8_t f[COMPANION_FRAME_MAX];pushFrame(f,companion_air::controlFrame(packet,snr,rssi,f,sizeof(f)));}
 static void push(const uint8_t *frame,size_t n){auto &p=pushes[pushSeq%PushMax];p.len=uint8_t(std::min(n,sizeof(p.b)));memcpy(p.b,frame,p.len);pushSeq++;}
 // Any message frame (contact, channel, channel data) waits in the queue; the app is told by a message-waiting push.
 static void enqueueFrame(const uint8_t *f,size_t n){if(!n||n>COMPANION_FRAME_MAX||!queueBuffer())return;if(queueCount==QueueMax){queueHead=(queueHead+1)%QueueMax;queueCount--;}auto &q=queue[(queueHead+queueCount)%QueueMax];q.len=uint8_t(n);memcpy(q.b,f,n);queueCount++;uint8_t tickle=PUSH_MSG_WAITING;push(&tickle,1);}
@@ -136,11 +136,11 @@ struct AppChannels {ChatMesh &mesh;int received;
 void channelData(int meshIdx,const mesh::GroupChannel &ch,mesh::Packet *packet,uint16_t type,const uint8_t *data,size_t len){
  AppChannels c{chatMesh(),meshIdx};uint8_t f[COMPANION_FRAME_MAX];enqueueFrame(f,companion_packets::channelDataFrame(c,ch,packet,type,data,len,f,sizeof(f)));}
 void rawData(const mesh::Packet *packet,float snr,float rssi){uint8_t f[COMPANION_FRAME_MAX];pushFrame(f,companion_packets::rawDataFrame(snr,rssi,packet,f,sizeof(f)));}
-void contactResponse(const ContactInfo &from,const uint8_t *data,uint8_t len){uint8_t f[COMPANION_FRAME_MAX];pushFrame(f,companion_remote::responseFrame(chatMesh(),pend,from,data,len,f,sizeof(f)));}
+void contactResponse(const ContactInfo &from,const uint8_t *data,uint8_t len){rptResponse(from,data,len);uint8_t f[COMPANION_FRAME_MAX];pushFrame(f,companion_remote::responseFrame(chatMesh(),pend,from,data,len,f,sizeof(f)));}
 bool pathRecv(const ContactInfo &from,const uint8_t *in,uint8_t inLen,const uint8_t *out,uint8_t outLen,uint8_t type,const uint8_t *extra,uint8_t len){
  uint8_t f[COMPANION_FRAME_MAX];size_t n=0;if(!companion_remote::pathResponse(pend,from,in,inLen,out,outLen,type,extra,len,f,sizeof(f),n))return false;pushFrame(f,n);return true;}
 void traceRecv(const mesh::Packet *packet,uint32_t tag,uint32_t auth,uint8_t flags,const uint8_t *snrs,const uint8_t *hashes,uint8_t len){
- uint8_t f[COMPANION_FRAME_MAX];pushFrame(f,companion_remote::traceFrame(packet,tag,auth,flags,snrs,hashes,len,f,sizeof(f)));}
+ rptTrace(packet,tag,flags,snrs,hashes,len);uint8_t f[COMPANION_FRAME_MAX];pushFrame(f,companion_remote::traceFrame(packet,tag,auth,flags,snrs,hashes,len,f,sizeof(f)));}
 // Pushes for contact changes. Every advert also feeds the table behind CMD_GET_ADVERT_PATH.
 void discovered(const ContactInfo &c,bool isNew,uint8_t pathLen,const uint8_t *path){uint8_t f[COMPANION_FRAME_MAX];
  pushFrame(f,isNew?companion_state::contactFrame(companion_state::PUSH_NEW_ADVERT,c,f):companion_state::advertFrame(c.id.pub_key,f));

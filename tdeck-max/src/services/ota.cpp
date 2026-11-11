@@ -25,15 +25,10 @@ static const uint8_t SigningKey[32]={0xf6,0x44,0x54,0xa5,0x7d,0x17,0x66,0xd2,0xe
 #define MM_OTA_DEFAULT_SERVERS ""
 #endif
 static const char *DefaultServers=MM_OTA_DEFAULT_SERVERS;
-// Public half of ~/.config/mattermesh/ota/license.key (apps licenses, docs/unlock-protocol.md).
-static const uint8_t LicenseKey[32]={0x4f,0x30,0xf1,0x95,0x9a,0xd3,0x8e,0xa8,0x31,0xc1,0xe0,0x56,0x90,0x54,0xde,0xba,0x5d,0xdc,0xe8,0x6d,0x1e,0x46,0xc9,0xb3,0xa9,0xe5,0x90,0xb0,0x80,0x40,0xfe,0x1e};
-// Edition sent with every check (docs/unlock-protocol.md). A Free image is offered the Full one once the server holds
-// a license for this device; Full images are signed for "<board>-full".
-static const char *Edition="free";
 static Preferences preferences;static OtaState state;static SemaphoreHandle_t mutex=nullptr;static bool busy=false,healthy=false,checkedOnce=false;
 // rejected: a build that rolled back twice is no longer offered (one rollback can be a power cut in the first 30 s).
-// offerEdition: edition of the release on offer, saved with "try" so a Free -> Full switch that rolls back is seen.
-static uint32_t connectedAt=0,lastCheck=0,restartAt=0;static int32_t rejected=0;static String servers,pendingReport,pendingDetail,sha256,signature,path,license,offerEdition,rejectedEdition;
+
+static uint32_t connectedAt=0,lastCheck=0,restartAt=0;static int32_t rejected=0;static String servers,pendingReport,pendingDetail,sha256,signature,path;
 struct Report {String server,status,detail;int32_t code;};
 
 const char *otaBoard(){
@@ -44,25 +39,6 @@ const char *otaBoard(){
 #endif
 }
 static String deviceId(){uint8_t mac[6];WiFi.macAddress(mac);return String(mm::hexString(mac,6,true).c_str());}
-// Apps unlock code (docs/unlock-protocol.md): SHA-256("MMID1\n"+dev), first 40 bits as 8 Crockford base32 digits, XXXX-XXXX.
-// The customer writes it in the Ko-fi order; the server finds the device by it.
-String otaUnlockCode(){
- static const char digits[]="0123456789ABCDEFGHJKMNPQRSTVWXYZ";String text="MMID1\n"+deviceId();uint8_t h[32];
- mbedtls_sha256_context ctx;mbedtls_sha256_init(&ctx);mbedtls_sha256_starts(&ctx,0);mbedtls_sha256_update(&ctx,(const unsigned char*)text.c_str(),text.length());mbedtls_sha256_finish(&ctx,h);mbedtls_sha256_free(&ctx);uint64_t v=0;for(int i=0;i<5;i++)v=v<<8|h[i];
- char code[10];for(int i=0,at=0;i<8;i++){if(i==4)code[at++]='-';code[at++]=digits[(v>>(35-5*i))&31];}code[9]=0;return code;
-}
-static bool hexBytes(const String &hex,uint8_t *out,size_t length);
-// {"dev","board","issued","sig"}: sig = ed25519 over "MMLIC1\n"+dev+"\n"+board+"\nfull\n"+issued, for this T-Deck only.
-static bool licenseValid(const String &json){
- StaticJsonDocument<384> doc;if(!json.length()||deserializeJson(doc,json))return false;
- String dev=doc["dev"]|"",board=doc["board"]|"",sig=doc["sig"]|"";uint32_t issued=doc["issued"]|0;uint8_t raw[64];
- if(dev!=deviceId()||board!=otaBoard()||!issued||!hexBytes(sig,raw,64))return false;
- String message="MMLIC1\n"+dev+"\n"+board+"\nfull\n"+String(issued);
- return ed25519_verify(raw,(const uint8_t*)message.c_str(),message.length(),LicenseKey)==1;
-}
-bool otaAppsUnlocked(){
- return false;// the Free image has no apps to unlock: it installs the Full one instead
-}
 static void publish(){state.revision++;}
 static void setPhase(OtaPhase phase,const String &message){xSemaphoreTake(mutex,portMAX_DELAY);state.phase=phase;state.message=message;publish();xSemaphoreGive(mutex);}
 static bool secureUrl(const String &url){return url.startsWith("https://");}
@@ -93,29 +69,21 @@ static void checkWorker(void*){
  while(start<int(list.length())){
   int end=list.indexOf(' ',start);String base=list.substring(start,end);start=end+1;if(!base.length())continue;
   std::unique_ptr<WiFiClient> client;HTTPClient http;
-  String url=base+"/api/v1/check?board="+otaBoard()+"&code="+String(MM_VERSION_CODE)+"&dev="+deviceId()+"&ver="+MM_BUILD_VERSION+"&ed="+Edition;
+  String url=base+"/api/v1/check?board="+otaBoard()+"&code="+String(MM_VERSION_CODE)+"&dev="+deviceId()+"&ver="+MM_BUILD_VERSION;
   if(!open(http,client,url))continue;int status=http.GET();
   if(status!=200){http.end();continue;}
   answered=true;DynamicJsonDocument doc(1536);auto error=deserializeJson(doc,http.getStream());http.end();if(error)continue;
   reached=true;
   if(pendingReport.length()){Report report{base,pendingReport,pendingDetail,MM_VERSION_CODE};sendReport(report);pendingReport="";}
-  // Licensed devices get their license with every answer: the Free image keeps it for the Full one it installs, a Full
-  // image without one (first boot after a lost NVS) picks it up here. A missing license never removes a stored one.
-  {String fresh;if(doc["license"].is<JsonObject>())serializeJson(doc["license"],fresh);
-   if(licenseValid(fresh)){xSemaphoreTake(mutex,portMAX_DELAY);bool changed=license!=fresh;license=fresh;xSemaphoreGive(mutex);
-    if(changed)preferences.putString("license",fresh);
-   }}
   if(!doc["update"].as<bool>()){
    xSemaphoreTake(mutex,portMAX_DELAY);state.phase=OtaPhase::UpToDate;state.message="Up to date";state.server=base;state.checkedAt=millis();publish();xSemaphoreGive(mutex);break;
   }
   String version=doc["version"]|"",sha=doc["sha256"]|"",sig=doc["sig"]|"",file=doc["path"]|"";int32_t code=doc["code"]|0;uint32_t size=doc["size"]|0;
   const esp_partition_t *slot=esp_ota_get_next_update_partition(nullptr);
-  // Free -> Full is offered at the same build number too: the edition is what changes, never an older build.
-  bool full=String(doc["edition"]|"")=="full",switching=full&&String(Edition)=="free";String signedBoard=String(otaBoard())+(full?"-full":"");
-  String problem=String(doc["board"]|"")!=otaBoard()?"Release for another board":code<MM_VERSION_CODE||(code==MM_VERSION_CODE&&!switching)?"Server offers an older build":code==bad&&(!rejectedEdition.length()||rejectedEdition==(full?"full":"free"))?"Build "+String(code)+" rolled back / ignored":!slot||size==0||size>slot->size?"Release larger than the update slot":!file.startsWith("/fw/")?"Bad download path":!signatureValid(signedBoard,version,code,sha,sig)?"Signature not valid / ignored":"";
+  String problem=String(doc["board"]|"")!=otaBoard()?"Release for another board":code<=MM_VERSION_CODE?"Server offers an older build":code==bad?"Build "+String(code)+" rolled back / ignored":!slot||size==0||size>slot->size?"Release larger than the update slot":!file.startsWith("/fw/")?"Bad download path":!signatureValid(otaBoard(),version,code,sha,sig)?"Signature not valid / ignored":"";
   xSemaphoreTake(mutex,portMAX_DELAY);state.server=base;state.checkedAt=millis();
   if(problem.length()){state.phase=OtaPhase::Error;state.message=problem;}
-  else{state.phase=OtaPhase::Available;state.version=version;state.code=code;state.size=size;state.done=0;state.notes=doc["notes"]|"";state.message=version+(full?" Full":"")+" available";sha256=sha;signature=sig;path=file;offerEdition=full?"full":"free";}
+  else{state.phase=OtaPhase::Available;state.version=version;state.code=code;state.size=size;state.done=0;state.notes=doc["notes"]|"";state.message=version+" available";sha256=sha;signature=sig;path=file;}
   publish();xSemaphoreGive(mutex);break;
  }
  // Not reached: an offer found earlier stays (it is still signed and valid); otherwise say what went wrong.
@@ -124,7 +92,7 @@ static void checkWorker(void*){
 }
 
 // Streams the image into the idle slot, resuming with a Range request when the connection drops.
-static bool download(const String &url,uint32_t size,const String &expected,int32_t code,const String &edition,String &problem){
+static bool download(const String &url,uint32_t size,const String &expected,int32_t code,String &problem){
  if(!Update.begin(size,U_FLASH)){problem="Update slot unavailable";return false;}
  mbedtls_sha256_context hash;mbedtls_sha256_init(&hash);mbedtls_sha256_starts(&hash,0);
  std::unique_ptr<uint8_t[]> buffer(new uint8_t[4096]);uint32_t done=0;int attempts=0;problem="Update server unreachable";
@@ -149,15 +117,14 @@ static bool download(const String &url,uint32_t size,const String &expected,int3
  if(done<size){Update.abort();return false;}
  if(expected!=mm::hexString(digest,32).c_str()){Update.abort();problem="Checksum mismatch / discarded";return false;}
  // Saved before Update.end() switches the boot slot: a power cut in between still counts this image's first start.
- preferences.putString("tryed",edition);preferences.putInt("from",MM_VERSION_CODE);preferences.putInt("try",code);
- if(!Update.end()){preferences.remove("try");preferences.remove("from");preferences.remove("tryed");problem=String("Image rejected: ")+Update.errorString();return false;}
+ preferences.putInt("from",MM_VERSION_CODE);preferences.putInt("try",code);
+ if(!Update.end()){preferences.remove("try");preferences.remove("from");problem=String("Image rejected: ")+Update.errorString();return false;}
  return true;
 }
 
 static void installWorker(void*){
  xSemaphoreTake(mutex,portMAX_DELAY);String url=state.server+path,version=state.version,expected=sha256;uint32_t size=state.size;int32_t code=state.code;state.phase=OtaPhase::Downloading;state.done=0;state.message="Downloading "+version;publish();xSemaphoreGive(mutex);
- xSemaphoreTake(mutex,portMAX_DELAY);String edition=offerEdition;xSemaphoreGive(mutex);
- String problem;bool ok=download(url,size,expected,code,edition,problem);
+ String problem;bool ok=download(url,size,expected,code,problem);
  if(ok){
   setPhase(OtaPhase::Restarting,"Installed "+version+" / restarting");Serial.printf("OTA_INSTALLED version=%s code=%ld\n",version.c_str(),long(code));
   // otaLoop() restarts in 2.5 s from the main task, between its own SD writes, after closing the card (the SD is
@@ -176,7 +143,6 @@ static bool spawn(TaskFunction_t worker,const char *name,uint32_t stack){
 
 void otaBegin(){
  mutex=xSemaphoreCreateMutex();preferences.begin("mmota",false);
- license=preferences.getString("license","");if(!licenseValid(license))license="";
  servers=preferences.isKey("servers")?preferences.getString("servers",DefaultServers):String(DefaultServers);
  // A list saved from serial keeps the servers of this build in front: a T-Deck set by hand to the NAS still moves to new defaults.
  {String missing,rest=String(DefaultServers)+" ";int start=0;
@@ -187,16 +153,12 @@ void otaBegin(){
  if(tried){
   // The bootloader booted the old slot again: the new image crashed before it was marked healthy.
   // "try" stays until otaLoop() marks the new image healthy, so a crash before that is still seen here after the rollback.
-  // Same build number after a Free -> Full switch: the edition tells whether the new image is the one running.
-  String edition=preferences.getString("tryed","");
-  if(tried==MM_VERSION_CODE&&(!edition.length()||edition==Edition)){state.installed=true;pendingReport="ok";pendingDetail="installed from "+String(from);}
-  else{state.rolledBack=true;pendingReport="rollback";pendingDetail="build "+String(tried)+(edition.length()?" "+edition:"")+" rolled back";state.message="Update rolled back";
-   String badEdition=edition.length()?edition:String(Edition);
-   String stored=preferences.getString("bade","");// none: saved by an older build, same count
-   int32_t count=preferences.getInt("bad",0)==tried&&(!stored.length()||stored==badEdition)?preferences.getInt("badn",0)+1:1;preferences.putInt("bad",tried);preferences.putInt("badn",count);preferences.putString("bade",badEdition);
-   preferences.remove("try");preferences.remove("from");preferences.remove("tryed");}
+ if(tried==MM_VERSION_CODE){state.installed=true;pendingReport="ok";pendingDetail="installed from "+String(from);}
+ else{state.rolledBack=true;pendingReport="rollback";pendingDetail="build "+String(tried)+" rolled back";state.message="Update rolled back";
+  int32_t count=preferences.getInt("bad",0)==tried?preferences.getInt("badn",0)+1:1;preferences.putInt("bad",tried);preferences.putInt("badn",count);
+  preferences.remove("try");preferences.remove("from");}
  }
- rejected=preferences.getInt("badn",0)>=2?preferences.getInt("bad",0):0;rejectedEdition=preferences.getString("bade","");state.refused=rejected;// offered again after one rollback
+ rejected=preferences.getInt("badn",0)>=2?preferences.getInt("bad",0):0;state.refused=rejected;// offered again after one rollback
  const esp_partition_t *running=esp_ota_get_running_partition();esp_ota_img_states_t image;
  Serial.printf("OTA_BOOT board=%s code=%ld slot=%s state=%d tried=%ld\n",otaBoard(),long(MM_VERSION_CODE),running?running->label:"?",running&&esp_ota_get_state_partition(running,&image)==ESP_OK?int(image):-1,long(tried));
 }
@@ -207,7 +169,7 @@ void otaLoop(bool wifiConnected,bool uiReady){
   healthy=true;const esp_partition_t *running=esp_ota_get_running_partition();esp_ota_img_states_t image;
   if(running&&esp_ota_get_state_partition(running,&image)==ESP_OK&&image==ESP_OTA_IMG_PENDING_VERIFY){esp_ota_mark_app_valid_cancel_rollback();Serial.println("OTA_VALID image marked healthy");}
   if(preferences.getInt("try",0)==MM_VERSION_CODE){preferences.remove("try");preferences.remove("from");preferences.remove("tryed");}
-  if(preferences.getInt("bad",0)==MM_VERSION_CODE&&preferences.getString("bade",Edition)==Edition){preferences.remove("bad");preferences.remove("badn");preferences.remove("bade");}// this build runs: its old rollback count goes
+  if(preferences.getInt("bad",0)==MM_VERSION_CODE){preferences.remove("bad");preferences.remove("badn");}// this build runs: its old rollback count goes
  }
  if(!wifiConnected){connectedAt=0;return;}
  if(!connectedAt)connectedAt=millis();
