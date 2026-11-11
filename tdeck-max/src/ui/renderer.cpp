@@ -1,3 +1,4 @@
+#include "services/motion_policy.h"
 #include "radio_link_layout.h"
 #include "services/time_zone.h"
 #include "renderer.h"
@@ -230,7 +231,8 @@ void Renderer::mainWidget(const State &s,int id,Rect r){
    c.text(X+14,ry+16,row.text,row.unread?Font::Bold:Font::ChatMeta,FG,AW-24);if(i+1<int(m.timeline.size())&&i+1<AH/TimelineRowH)g.drawFastHLine(X+8,ry+TimelineRowH-4,AW-16,FG);}break;}
  case MainRadar:{if(!m.here){noFix("Mesh radar");break;}if(m.nearby.empty()){empty("Nobody to place","no contact has sent a position");break;}
   int far=0;for(auto &n:m.nearby)far=std::max(far,n.meters);int ring=500;for(int step:{500,1000,2000,5000,10000,20000,50000})if(far<=step*3){ring=step;break;}else ring=step;
-  int cx=X+60,cy=Y+60,R=52;for(int k=1;k<=3;k++)g.drawCircle(cx,cy,R*k/3,FG);for(int k=-R;k<=R;k+=3){g.drawPixel(cx+k,cy,FG);g.drawPixel(cx,cy+k,FG);}c.text(cx+4,cy-R-1,"N",Font::ChatMeta);
+  int cx=X+60,cy=Y+60,R=52;for(int k=1;k<=3;k++)g.drawCircle(cx,cy,R*k/3,FG);for(int k=-R;k<=R;k+=3){g.drawPixel(cx+k,cy,FG);g.drawPixel(cx,cy+k,FG);}
+  if(m.northAngle<0)c.text(cx+4,cy-R-1,"N",Font::ChatMeta);else{float na=m.northAngle*float(M_PI)/180;c.text(cx+int((R-8)*std::sin(na))-3,cy-int((R-8)*std::cos(na))-6,"N",Font::ChatMeta);c.text(X+124,Y+96,"heading up",Font::ChatMeta);}// heading up: the compass heading is at the top, N moves round the ring
   // Heard since boot: filled; only known from the cache: hollow.
   for(auto &n:m.nearby){float dist=std::min(1.f,n.meters/float(ring*3)),a=n.bearing*float(M_PI)/180;int px=cx+int(R*dist*std::sin(a)),py=cy-int(R*dist*std::cos(a));if(n.live)g.fillCircle(px,py,4,FG);else{g.fillCircle(px,py,4,BG);g.drawCircle(px,py,4,FG);}}
   g.fillRect(cx-3,cy-3,7,7,FG);
@@ -470,6 +472,10 @@ void Renderer::mapView(const State &s){
   if(pin.repeater){g.fillTriangle(pin.x,pin.y-9,pin.x-8,pin.y+6,pin.x+8,pin.y+6,BG);g.fillTriangle(pin.x,pin.y-6,pin.x-5,pin.y+4,pin.x+5,pin.y+4,FG);}else{g.fillCircle(pin.x,pin.y,6,BG);g.fillCircle(pin.x,pin.y,4,FG);}
   if(s.mapPins.size()<=8&&!pin.name.empty())label(pin.x+7,pin.y-5,pin.name);}
  if(s.mapSelfX>=0){int x=s.mapSelfX,y=s.mapSelfY;g.fillCircle(x,y,11,BG);for(int r=8;r<=9;r++)g.drawCircle(x,y,r,FG);g.fillCircle(x,y,4,FG);for(int d:{-1,0,1}){g.drawFastHLine(x-14,y+d,4,FG);g.drawFastHLine(x+11,y+d,4,FG);g.drawFastVLine(x+d,y-14,4,FG);g.drawFastVLine(x+d,y+11,4,FG);}}
+ if(s.mapSelfX>=0&&s.mapHeading>=0){// heading arrow on the self marker: halo first so it reads over dark tiles
+  float a=s.mapHeading*float(M_PI)/180,fx=std::sin(a),fy=-std::cos(a),rx=std::cos(a),ry=std::sin(a);int x=s.mapSelfX,y=s.mapSelfY;
+  auto pt=[&](float f,float w,int &px,int &py){px=x+int(std::lround(f*fx+w*rx));py=y+int(std::lround(f*fy+w*ry));};int ax,ay,bx,by,cx,cy;
+  pt(25,0,ax,ay);pt(10,-8,bx,by);pt(10,8,cx,cy);g.fillTriangle(ax,ay,bx,by,cx,cy,BG);pt(22,0,ax,ay);pt(12,-5,bx,by);pt(12,5,cx,cy);g.fillTriangle(ax,ay,bx,by,cx,cy,FG);}
  if(!s.mapStatus.empty())label(A.x+(s.mapFull?42:2),A.y+(s.mapFull?15:2),s.mapStatus);
  if(s.mapFull&&!s.notice.empty())label(A.x+42,A.y+28,s.notice);// e.g. "No GPS position": no footer on the full-page map
  // OpenStreetMap licence: credit in the bottom-left corner, the scale bar just above it.
@@ -608,6 +614,7 @@ void Renderer::settings(const State &s){
    case WebAppSection:return s.webOn?(s.webLinked?"On, browser connected":"On"):"Your chats in a browser";case 4:return s.wifiConnected?"Connected":s.wifiEnabled?"On, not connected":"Off";case 14:return s.rlOn?"Used by Companion link":s.bleReady?"On":"Off";
    case 2:return s.rlOn?"Off: companion radio in use":s.radioReady?"SX1262 ready":"Offline";case RadioLinkSection:return !s.rlOn?(s.rlSaved?std::string("Off"):std::string("Use another radio")):(s.rlReady?"In use: "+s.rlSavedName:"Connecting: "+s.rlSavedName);case 23:return s.radioInternal?"Internal antenna":"External antenna";
    case 3:return s.gpsEnabled?"On":"Off";case 6:return "Lights / haptics";
+   case MotionSection:return !s.motionEnabled?"Off":s.motionPhase==2?"Loading "+std::to_string(s.motionLoad)+"%":s.motionPhase==4?"Not detected":s.motionPhase==5?"Failed":s.motionHeadingValid?std::to_string(s.motionHeading)+"° "+device::compassName(float(s.motionHeading)):s.motionRaise?"Raise to wake on":"On";
    case 22:return std::string("Lock screen: ")+mm_wallpaper::list[s.wallpaper>=0&&s.wallpaper<mm_wallpaper::count?s.wallpaper:0].name;
    case KeyboardSection:{std::string codes;for(auto l:mm_kbd::Order)if(s.kbdMask&(1u<<int(l))){if(!codes.empty())codes+=" ";codes+=mm_kbd::info(l).code;}return mm_kbd::enabledCount(s.kbdMask)>1?codes+" (Alt + Space)":"Typing: "+std::string(mm_kbd::info(mm_kbd::Lang(s.kbdLang)).name);}
    case AccentKeySection:return s.accentMode==1?"Right Shift":s.accentMode==2?"Left Shift":"Off";
@@ -627,6 +634,7 @@ void Renderer::settings(const State &s){
 void Renderer::section(const State &s){
  const char *title="MatterMesh OS";
  switch(s.page){case Page::Antenna:title="Antenna";break;case Page::HomeWidgets:title="Home widgets";break;case Page::BesideClock:title="Beside clock";break;case Page::MainArea:title="Main area";break;case Page::Note:title="Note";break;case Page::Storage:title="Storage";break;case Page::Controls:title="Lights / vibration";break;case Page::Audio:title="Sound / dictation";break;case Page::Power:title="Power / timeouts";break;case Page::Wallpaper:title="Wallpaper";break;case Page::Keyboard:title="Keyboard languages";break;case Page::AccentKey:title="Accent key";break;case Page::Mesh:title="Contacts";break;case Page::Radio:title="LoRa";break;case Page::GPS:title="GPS";break;case Page::Maps:title="Maps";break;case Page::Weather:title="Weather";break;case Page::Info:title="About";break;case Page::Support:title=s.extraAppsUnlocked?"Donate":"Donate / Unlock";break;case Page::Files:title="Files";break;case Page::Wifi:title="Wi-Fi";break;case Page::Bluetooth:title="Bluetooth";break;case Page::Terminal:title="Diagnostics";break;case Page::DateTime:title="Date / time";break;case Page::Updates:title="OTA update";break;case Page::Battery:title="Battery";break;default:break;}
+ if(s.page==Page::Motion)title="Motion / compass";
  if(s.page==Page::Maps){g.fillScreen(BG);c.statusBar(s.status);}else{shell(s,title);g.fillRect(W-32,StatusH,32,HeaderH-1,BG);}// Maps: no header, the map takes the page
  auto valueCard=[&](Rect r,const std::string &label,const std::string &value){c.card(r);c.text(r.x+7,r.y+4,label,Font::ChatMeta);c.text(r.x+7,r.y+20,value,Font::Bold,FG,r.w-14);};
  auto gb=[](uint64_t bytes){char text[16];if(bytes<1073741824ull)snprintf(text,sizeof(text),"%u MB",unsigned(bytes/1048576));else snprintf(text,sizeof(text),"%.1f GB",bytes/1073741824.0);return std::string(text);};
@@ -752,6 +760,21 @@ void Renderer::section(const State &s){
   disc(MapBackFloat,false);c.icon(Icon::Back,MapBackFloat.x+7,MapBackFloat.y+7,16);
   for(int i=0;i<3;i++){Rect r=mapButtonRect(i);bool on=i==1&&s.mapFollow;disc(r,on);uint16_t ink=on?BG:FG;int cx=r.x+r.w/2,cy=r.y+r.h/2;
    if(i==1)c.icon(Icon::GPS,cx-8,cy-8,16,ink);else{g.fillRect(cx-7,cy-1,14,3,ink);if(i==2)g.fillRect(cx-1,cy-7,3,14,ink);}}
+}else if(s.page==Page::Motion){
+  {const char *phases[]={"Off","Powering...","Loading firmware","Ready, firmware ok","Not detected","Failed"};int ph=std::max(0,std::min(5,s.motionPhase));
+   std::string status=!s.motionEnabled?"Off, sensor unpowered":ph==2?"Loading firmware "+std::to_string(s.motionLoad)+"%":(ph==4||ph==5)&&!s.motionError.empty()?std::string(phases[ph])+": "+s.motionError:phases[ph];
+   c.toggleRow(MotionToggle,Icon::Vibration,"Motion sensor",status,s.motionEnabled);}
+  c.sectionLabel(Top+49,"COMPASS");
+  {auto r=MotionHeadingCard;c.card(r);c.text(r.x+7,r.y+3,"HEADING / GYRO + GPS COURSE",Font::ChatMeta,FG,r.w-14);
+   std::string value=!s.motionEnabled?"Sensor off":s.motionPhase!=3?"Not available":s.motionHeadingValid?std::to_string(s.motionHeading)+"° "+device::compassName(float(s.motionHeading)):"Waiting for GPS course";
+   c.text(r.x+7,r.y+16,value,Font::Bold,FG,r.w-14);
+   uint32_t sec=s.motionAnchorAge/1000;std::string note=s.motionHeadingValid?"Anchored "+(sec<60?std::to_string(sec)+" s":std::to_string(sec/60)+" min")+" ago":"No magnetometer: walk outside to set north";
+   c.text(r.x+7,r.y+30,note,Font::ChatMeta,FG,r.w-14);}
+  auto pill=[&](Rect row,const char *label,bool on){c.card(row);c.text(row.x+7,row.y+(row.h-15)/2,label,Font::ChatBody,FG,row.w-80);auto p=motionPill(row);if(on)g.fillRoundRect(p.x,p.y,p.w,p.h,11,FG);else g.drawRoundRect(p.x,p.y,p.w,p.h,11,FG);c.centered(p.x,p.y+5,p.w,on?"ON":"OFF",Font::Bold,on?BG:FG);};
+  auto step=[&](Rect row,const char *label,const std::string &value){c.card(row);c.text(row.x+7,row.y+(row.h-15)/2,label,Font::ChatBody,FG,96);int right=row.x+row.w-56;c.text(right-c.width(value,Font::Bold),row.y+(row.h-13)/2,value,Font::Bold);c.icon(Icon::Back,row.x+row.w-44,row.y+(row.h-12)/2,12);c.icon(Icon::ChevronRight,row.x+row.w-20,row.y+(row.h-12)/2,12);};
+  c.sectionLabel(MotionRaise.y-15,"RAISE TO WAKE");pill(MotionRaise,"Raise to wake",s.motionRaise);step(MotionSensitivityRow,"Sensitivity",device::motionSensitivityName(s.motionSensitivity));
+  c.sectionLabel(MotionOrientation.y-15,"MAP / TELEMETRY");step(MotionOrientation,"Orientation",s.motionHeadingUp?"Heading up":"North up");pill(MotionShare,"Share in telemetry",s.motionTelemetry);
+  {auto r=motionRowRect(std::max(0,std::min(MotionRows-1,s.motionFocus)));g.fillRect(2,r.y+4,3,r.h-8,FG);}// keyboard focus marker left of the row
  }else if(s.page==Page::GPS){
   c.toggleRow(GpsToggle,Icon::GPS,"GPS receiver",!s.gpsAvailable?"Unavailable":s.gpsTemporary?"On for time sync":s.gpsEnabled?"Enabled by user":"Off, saved position kept",s.gpsEnabled&&!s.gpsTemporary,s.gpsTemporary?"KEEP ON":"");
   c.sectionLabel(SettingsSectionY,"STATUS");

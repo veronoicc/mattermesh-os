@@ -24,6 +24,7 @@ It speaks the MeshCore companion protocol, so it works with the MeshCore apps an
 
 - Channel and direct chats, contacts, emoji, mentions and quick replies; wallpapers
 - **Keyboard languages**: Italian, English, German, French, Spanish, Portuguese, Russian and Ukrainian (Settings → Keyboard languages, with search). Alt + Space switches between the enabled languages and the one in use shows in the status bar; the accent key, tapped before a letter, types the letters without a key of their own
+- **Motion / compass** (BHI260AP, Settings → Motion / compass): raise to wake (three sensitivities, wakes the lights after the display timeout or the lock hint on the lock screen), heading arrow on the Maps position marker with an optional heading-up view and Home radar, accelerometer and heading in the node's telemetry (off by default). The board has no magnetometer: the heading comes from the gyro and is anchored to the GPS course while you walk, so it needs a moving fix first. The sensor firmware (100 KB) loads in the background after boot
 - MeshCore companion over Bluetooth, USB and Wi-Fi
 - Full MeshCore companion protocol v14: repeater login and admin console, status, telemetry, trace path (ping), path discovery, signing, flood scopes, stats and tuning, and client repeat mode (Settings → LoRa → Device). Private key import and export stay off unless built with `-D ENABLE_PRIVATE_KEY_EXPORT=1 -D ENABLE_PRIVATE_KEY_IMPORT=1`, as in MeshCore
 - Apps: **Maps** (OpenStreetMap tiles with GPS), **Weather** (Open-Meteo), **Files**, **CLI**

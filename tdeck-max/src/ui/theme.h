@@ -105,6 +105,12 @@ constexpr int HapticTrackX=Margin+8,HapticTrackW=W-2*Margin-16;
 inline int stepRowTap(Rect r,int x){return x>=r.x+r.w-56&&x<r.x+r.w-26?-1:1;}
 constexpr Rect VibrationMessage={Margin,HapticY+70,W-2*Margin,32},VibrationMention={Margin,HapticY+104,W-2*Margin,32};
 constexpr Rect lightToggleRect(int row){return {W-62,ControlFirstY+row*ControlStep-4,54,22};}
+// Settings > Motion / compass (MotionSection): IMU switch card, heading card, then compact rows (toggle with ON/OFF pill, or "< value >" step row).
+constexpr Rect MotionToggle=SettingsSwitch,MotionHeadingCard={Margin,Top+63,W-2*Margin,44};
+constexpr Rect MotionRaise={Margin,Top+124,W-2*Margin,28},MotionSensitivityRow={Margin,Top+155,W-2*Margin,28},MotionOrientation={Margin,Top+200,W-2*Margin,28},MotionShare={Margin,Top+231,W-2*Margin,28};
+constexpr int MotionRows=5;// keyboard focus: 0 IMU, 1 raise to wake, 2 sensitivity, 3 map orientation, 4 telemetry
+constexpr Rect motionRowRect(int row){return row==0?MotionToggle:row==1?MotionRaise:row==2?MotionSensitivityRow:row==3?MotionOrientation:MotionShare;}
+constexpr Rect motionPill(Rect r){return {r.x+r.w-62,r.y+3,54,22};}
 constexpr Rect RadioAdvert={Margin,Top+202,W-2*Margin,28};
 constexpr Rect BackButton={0,StatusH,32,HeaderH};
 constexpr Rect ComposeButton={W-32,StatusH,32,HeaderH};

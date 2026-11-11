@@ -65,16 +65,22 @@ void mapCompose(mm::State &v){
  const auto &a=mm::MapPageArea;v.mapFull=true;
  if(!mapViewBits)mapViewBits=mapAllocView(a);if(!mapViewBits)return;
  auto gps=device::locationState();if(mapView.follow&&gps.fix){mapView.lat=gps.latitude;mapView.lon=gps.longitude;}
- const int w=a.w,h=a.h,z=mapView.zoom;int missing=mapComposeTiles(mapViewBits,a,mapView.lat,mapView.lon,z,1);
+ // Heading (motion sensor): an arrow on the self marker. Tiles stay north up (a bitmap turned on 1 bpp e-paper is unreadable);
+ // "Heading up" instead follows the GPS with the view shifted a quarter page ahead along the heading, in 45 degree steps so it does not shake.
+ double clat=mapView.lat,clon=mapView.lon;float hd=0;bool headingKnown=device::motionHeading(hd);bool headingUp=headingKnown&&device::motionState().headingUp;
+ if(headingUp&&mapView.follow&&gps.fix){auto self=device::mapProject(gps.latitude,gps.longitude,mapView.zoom);float q=float(int((hd+22.5f)/45.0f)%8)*45.0f*float(M_PI)/180;self.x+=sinf(q)*a.h/4.0;self.y-=cosf(q)*a.h/4.0;device::mapUnproject(self,mapView.zoom,clat,clon);}
+ v.mapHeading=headingKnown?int(lroundf(hd))%360:-1;v.mapHeadingUp=headingUp;mapHeadingPainted=v.mapHeading;
+ const int w=a.w,h=a.h,z=mapView.zoom;int missing=mapComposeTiles(mapViewBits,a,clat,clon,z,1);
  mapMissingCount=missing;v.mapBits=mapViewBits;v.mapFollow=mapView.follow;
- auto center=device::mapProject(mapView.lat,mapView.lon,z);double north,west,south,east;device::mapUnproject({center.x-w/2.0,center.y-h/2.0},z,north,west);device::mapUnproject({center.x+w/2.0,center.y+h/2.0},z,south,east);
+ auto center=device::mapProject(clat,clon,z);double north,west,south,east;device::mapUnproject({center.x-w/2.0,center.y-h/2.0},z,north,west);device::mapUnproject({center.x+w/2.0,center.y+h/2.0},z,south,east);
  matter::NodePin pins[24];int count=matter::nodePins(south,west,north,east,pins,24);
- for(int i=0;i<count;i++){double x,y;mapScreen(a,pins[i].lat,pins[i].lon,mapView.lat,mapView.lon,z,x,y);if(!mapInside(a,x,y))continue;mm::MapPin pin;pin.x=lround(x);pin.y=lround(y);pin.repeater=pins[i].repeater;pin.name=mm::senderDisplayName(pins[i].name);v.mapPins.push_back(pin);}
- if(gps.fix||gps.configured){double x,y;mapScreen(a,gps.latitude,gps.longitude,mapView.lat,mapView.lon,z,x,y);if(mapInside(a,x,y)){v.mapSelfX=lround(x);v.mapSelfY=lround(y);}}
- mapScale(mapView.lat,z,v);
+ for(int i=0;i<count;i++){double x,y;mapScreen(a,pins[i].lat,pins[i].lon,clat,clon,z,x,y);if(!mapInside(a,x,y))continue;mm::MapPin pin;pin.x=lround(x);pin.y=lround(y);pin.repeater=pins[i].repeater;pin.name=mm::senderDisplayName(pins[i].name);v.mapPins.push_back(pin);}
+ if(gps.fix||gps.configured){double x,y;mapScreen(a,gps.latitude,gps.longitude,clat,clon,z,x,y);if(mapInside(a,x,y)){v.mapSelfX=lround(x);v.mapSelfY=lround(y);}}
+ mapScale(clat,z,v);
  auto tiles=device::mapTilesState();v.mapStatus="Z"+std::to_string(z);
  if(missing)v.mapStatus+=!tiles.sd?" / NO SD":tiles.online?" / LOADING "+std::to_string(missing):" / NO WI-FI";
  else if(!gps.fix&&mapView.follow)v.mapStatus+=" / NO FIX";
+ if(headingUp)v.mapStatus+=" / HDG UP";
  if(mapZoomLimit)v.mapStatus+=mapZoomLimit<0?" / MAX ZOOM OUT":" / MAX ZOOM IN";
 }
 

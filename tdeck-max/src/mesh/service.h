@@ -89,7 +89,9 @@ struct CompanionHooks {uint16_t (*batteryMv)()=nullptr;uint32_t (*storageUsedKb)
  // CMD_RUN_CLI_COMMAND: runs one CLI line, writes the NUL terminated reply (at most cap bytes) and returns its length; 0 = unknown command.
  size_t (*runCli)(const char *command,char *reply,size_t cap)=nullptr;
  // The "gps" custom variable: a GPS module is present, the user's on/off choice (not a temporary time-sync lease), set it.
- bool (*gpsAvailable)()=nullptr;bool (*gpsEnabled)()=nullptr;bool (*setGps)(bool on)=nullptr;};
+ bool (*gpsAvailable)()=nullptr;bool (*gpsEnabled)()=nullptr;bool (*setGps)(bool on)=nullptr;
+ // Motion sensor shared in self telemetry (Settings > Motion / compass): false = nothing to share; accelerometer in g, heading in degrees (NAN unknown).
+ bool (*motion)(float accelG[3],float &heading)=nullptr;};
 void companionHooks(const CompanionHooks &hooks);
 size_t companionStatsLine(char *out,size_t cap);// "COMPANION_STATS ..." debug line (serial "companion stats")
 void companionAirTrace(bool on);// serial "companion trace on|off": one AIR_TX / AIR_RX line per radio packet

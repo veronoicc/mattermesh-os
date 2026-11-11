@@ -107,7 +107,7 @@ static float mcuTemperature(void*){
 static companion_state::Module &stateModule(){
  static companion_state::Module m;static bool ready=false;
  if(!ready){ready=true;m.tuning.airtime=9.0f;// the fixed factor this firmware always used (TX <=10% airtime); MeshCore's own default is 1.0
-  auto &h=m.hooks;h.stats=statsHook;h.batteryMv=[](void*)->uint16_t{return hooks.batteryMv?hooks.batteryMv():0;};h.mcuTemperature=mcuTemperature;h.saveTuning=saveTuning;
+  auto &h=m.hooks;h.stats=statsHook;h.batteryMv=[](void*)->uint16_t{return hooks.batteryMv?hooks.batteryMv():0;};h.mcuTemperature=mcuTemperature;h.saveTuning=saveTuning;h.motion=[](void*,float a[3],float &heading)->bool{return hooks.motion&&hooks.motion(a,heading);};
   h.disableTransports=[](void*){if(hooks.disableTransports)hooks.disableTransports();};h.wipe=[](void*)->bool{return hooks.wipe&&hooks.wipe();};
   h.reboot=[](void*){if(hooks.reboot)hooks.reboot();};h.installIdentity=installIdentity;
   h.runCli=[](void*,const char *command,char *reply,size_t cap)->size_t{return hooks.runCli?hooks.runCli(command,reply,cap):0;};

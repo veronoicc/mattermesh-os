@@ -82,7 +82,7 @@ void locationLoop(){
  if(!offPending&&dumpWanted(now)&&uint32_t(now-fixFirstAt)>=GPS_BACKUP_AFTER_FIX_MS&&(!dumped||uint32_t(now-lastDumpAt)>=GPS_BACKUP_INTERVAL_MS))backup.startDump(now,clockEpoch(),sendUbx);
  if(fix&&gps.location.isUpdated()){
   double lat=gps.location.lat(),lon=gps.location.lng();bool changed=fabs(lat-state.latitude)>0.001||fabs(lon-state.longitude)>0.001;
-  state.latitude=lat;state.longitude=lon;state.configured=true;state.altitude=gps.altitude.meters();if(changed)state.revision++;
+  state.latitude=lat;state.longitude=lon;state.configured=true;state.altitude=gps.altitude.meters();state.courseValid=gps.course.isValid()&&gps.speed.isValid()&&gps.course.age()<5000;state.courseDeg=gps.course.deg();state.speedKmh=gps.speed.kmph();if(changed)state.revision++;
   // NVS keeps the last position (map start, weather without a fix, GPS aiding): only a fix held for 30 s, rewritten
   // after ~100 m of movement (GPS jitter alone used to write it every minute).
   static double savedLat=NAN,savedLon=NAN;

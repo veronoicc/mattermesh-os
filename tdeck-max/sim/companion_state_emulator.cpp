@@ -18,7 +18,7 @@ Bytes cat(std::initializer_list<Bytes> parts){Bytes r;for(auto &p:parts)r.insert
 // Test doubles for the firmware facilities, recording what the module did and in which order.
 struct Env {
  std::vector<std::string> log;cs::Stats stats;uint16_t mv=3900;float temp=31.5f;
- bool saveOk=true,wipeOk=true,identityOk=true,gpsHere=false,gpsOn=false,gpsFail=false;uint8_t blob[8]={};size_t blobLen=0;mesh::LocalIdentity installed;bool haveInstalled=false;
+ bool saveOk=true,wipeOk=true,identityOk=true,gpsHere=false,gpsOn=false,gpsFail=false,motion=false;float accel[3]={0.012f,-0.5f,0.987f},heading=123;uint8_t blob[8]={};size_t blobLen=0;mesh::LocalIdentity installed;bool haveInstalled=false;
  std::string cliSeen;std::string cliReply="OK - ok";
  static Env &of(void *c){return *static_cast<Env*>(c);}
  cs::Hooks hooks(){cs::Hooks h;h.ctx=this;
@@ -33,6 +33,7 @@ struct Env {
   h.runCli=[](void *c,const char *cmd,char *reply,size_t cap){auto &e=of(c);e.cliSeen=cmd;if(e.cliReply.empty())return size_t(0);snprintf(reply,cap,"%s",e.cliReply.c_str());return strlen(reply);};
   h.gpsAvailable=[](void *c){return of(c).gpsHere;};h.gpsEnabled=[](void *c){return of(c).gpsOn;};
   h.setGps=[](void *c,bool on){auto &e=of(c);if(e.gpsFail)return false;e.gpsOn=on;return true;};
+  h.motion=[](void *c,float a[3],float &heading){auto &e=of(c);if(!e.motion)return false;memcpy(a,e.accel,sizeof(e.accel));heading=e.heading;return true;};
   return h;}
 };
 struct Rig {
@@ -183,6 +184,10 @@ void selfTelemetry(){
  r.env.temp=NAN;got=r.ask({39,0,0,0});assert(got.size()==8+4&&Bytes(got.begin()+8,got.end())==(Bytes{1,0x74,0x01,0x86}));
  // MyMesh answers the self request without consulting the telemetry modes (the module has no such state)
  assert(r.ask({39,0,0,0}).size()==12);
+ // Motion sensor shared (the hook answers): channel 2 accelerometer in g (0x71, 0.001) then direction (0x84, degrees) after the battery and temperature; unknown heading skips the direction; not shared adds nothing
+ r.env.temp=31.5f;r.env.motion=true;got=r.ask({39,0,0,0});assert(Bytes(got.begin()+8,got.end())==(Bytes{1,0x74,0x01,0x86,1,0x67,0x01,0x3B,2,0x71,0x00,0x0C,0xFE,0x0C,0x03,0xDB,2,0x84,0x00,0x7B}));
+ r.env.heading=NAN;got=r.ask({39,0,0,0});assert(Bytes(got.begin()+8,got.end())==(Bytes{1,0x74,0x01,0x86,1,0x67,0x01,0x3B,2,0x71,0x00,0x0C,0xFE,0x0C,0x03,0xDB}));
+ r.env.motion=false;got=r.ask({39,0,0,0});assert(Bytes(got.begin()+8,got.end())==(Bytes{1,0x74,0x01,0x86,1,0x67,0x01,0x3B}));
  // a request for another contact (len >= 36) is not this module's; 5..35 bytes is the generic unsupported answer
  assert(!r.claims(Bytes(36,39))&&r.ask(Bytes(5,39))==UNSUPPORTED&&r.ask(Bytes(35,39))==UNSUPPORTED);assert(r.ask({39,0,0})==UNSUPPORTED);
  printf("self telemetry: 0x8B frame, CayenneLPP voltage+temperature, NaN temperature skipped, other forms not claimed\n");

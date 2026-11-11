@@ -54,7 +54,7 @@ but the firmware does not start MeshCore.
 | GPS MIA-M10Q on Serial2 | Existing 38400-baud NMEA/UBX model, powered by XL9555 pin2. About 6 s cold start; configurable fix coordinates. |
 | SD / NVS | Host directory / atomic Preferences file, using the existing core. |
 | Wi-Fi | Virtual AP `EMU-WiFi` / `meshcore`; real TCP sockets restricted to localhost. |
-| BLE / modem / BHI260AP | Existing disconnected BLE shim; modem and gyroscope absent. |
+| BLE / modem / BHI260AP | Existing disconnected BLE shim; modem absent. The BHI260AP is not modelled: `emu/stubs/services/motion_chip.h` replaces the SensorLib driver wrapper, the chip never answers and Settings > Motion / compass reports "Not detected" (raise to wake, heading and motion telemetry stay idle). |
 
 **Display timing follows the checked-in driver:** BUSY is **active LOW**, power
 transitions take 45 ms, full refresh takes 1015 ms and ordinary partial takes 650 ms.

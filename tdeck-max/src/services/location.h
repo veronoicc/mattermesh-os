@@ -4,7 +4,7 @@
 #include <vector>
 #include <ExtensionIOXL9555.hpp>
 namespace device {
-struct LocationState {bool nmeaFresh=false,timeValid=false;uint32_t serialBytes=0,nmeaValid=0,nmeaBad=0,nmeaAgeMs=UINT32_MAX,satellitesUsed=0,satellitesVisible=0;bool configured=false,fix=false,data=false,enabled=false,available=false,userEnabled=false,timeLease=false;uint32_t userRevision=0;double latitude=0,longitude=0,altitude=0;uint32_t satellites=0,revision=0,baud=0,fixAgeMs=UINT32_MAX;bool injected=false;/* "gps inject" test position */};
+struct LocationState {bool nmeaFresh=false,timeValid=false;uint32_t serialBytes=0,nmeaValid=0,nmeaBad=0,nmeaAgeMs=UINT32_MAX,satellitesUsed=0,satellitesVisible=0;bool configured=false,fix=false,data=false,enabled=false,available=false,userEnabled=false,timeLease=false;uint32_t userRevision=0;double latitude=0,longitude=0,altitude=0;uint32_t satellites=0,revision=0,baud=0,fixAgeMs=UINT32_MAX;bool injected=false;/* "gps inject" test position */float courseDeg=0,speedKmh=0;bool courseValid=false;/* RMC course over ground and speed, motion compass anchor */};
 std::string locationNmeaDiagnostic();
 bool locationProbe();bool locationUbxPoll(uint8_t cls,uint8_t id,const uint8_t *payload,uint16_t size);std::string locationUbxResult();std::string locationReceiverDiagnostic();
 void locationBegin(ExtensionIOXL9555 &io,bool ready);void locationLoop();LocationState locationState();int locationHdop();/* GGA HDOP in hundredths, -1 unknown */bool gpsActive();/* enabled and module answering, no state copy */bool locationSet(double latitude,double longitude);

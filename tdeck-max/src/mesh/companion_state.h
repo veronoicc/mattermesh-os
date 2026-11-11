@@ -36,7 +36,7 @@ enum : uint8_t {CMD_SET_TUNING_PARAMS=21,CMD_EXPORT_PRIVATE_KEY=23,CMD_IMPORT_PR
  PUSH_ADVERT=0x80,PUSH_PATH_UPDATED=0x81,PUSH_NEW_ADVERT=0x8A,PUSH_TELEMETRY_RESPONSE=0x8B,PUSH_CONTACT_DELETED=0x8F,PUSH_CONTACTS_FULL=0x90,
  STATS_CORE=0,STATS_RADIO=1,STATS_PACKETS=2,
  ERR_UNSUPPORTED=1,ERR_NOT_FOUND=2,ERR_FILE_IO=5,ERR_ILLEGAL_ARG=6,
- MODE_DENY=0,MODE_ALLOW_FLAGS=1,MODE_ALLOW_ALL=2,PERM_BASE=0x01,PERM_LOCATION=0x02,PERM_ENVIRONMENT=0x04,TELEM_CHANNEL_SELF=1};
+ MODE_DENY=0,MODE_ALLOW_FLAGS=1,MODE_ALLOW_ALL=2,PERM_BASE=0x01,PERM_LOCATION=0x02,PERM_ENVIRONMENT=0x04,TELEM_CHANNEL_SELF=1,TELEM_CHANNEL_MOTION=2};
 inline size_t error(uint8_t *out,uint8_t code){out[0]=RESP_ERR;out[1]=code;return 2;}
 inline size_t put(uint8_t *out,const void *v,size_t n){memcpy(out,v,n);return n;}
 
@@ -95,6 +95,7 @@ struct Hooks {
  bool (*gpsAvailable)(void*)=nullptr;// a GPS module is present: only then is "gps" a custom variable
  bool (*gpsEnabled)(void*)=nullptr;
  bool (*setGps)(void*,bool)=nullptr;
+ bool (*motion)(void*,float accelG[3],float &heading)=nullptr;// motion sensor shared in telemetry (false: none): accelerometer in g, heading in degrees (NAN unknown)
 };
 struct Module {Hooks hooks;Tuning tuning;AdvertPaths adverts;mesh::LocalIdentity *self=nullptr;};
 
@@ -111,10 +112,11 @@ template<bool Enabled> size_t importPrivateKey(Module &m,const uint8_t *in,size_
  if(!m.hooks.installIdentity(m.hooks.ctx,id))return error(out,ERR_FILE_IO);
  out[0]=RESP_OK;return 1;}
 
-// Telemetry: channel 1 battery voltage, then MCU temperature when the board has one.
+// Telemetry: channel 1 battery voltage, then MCU temperature when the board has one; channel 2 accelerometer (g) and heading (degrees) when the motion sensor is shared.
 template<class L> size_t lppFill(Module &m,uint8_t *out){
  L lpp(uint8_t(MAX_FRAME-8));lpp.reset();lpp.addVoltage(TELEM_CHANNEL_SELF,float(m.hooks.batteryMv(m.hooks.ctx))/1000.0f);
  float t=m.hooks.mcuTemperature(m.hooks.ctx);if(!isnan(t))lpp.addTemperature(TELEM_CHANNEL_SELF,t);
+ {float a[3]={},heading=NAN;if(m.hooks.motion&&m.hooks.motion(m.hooks.ctx,a,heading)){lpp.addAccelerometer(TELEM_CHANNEL_MOTION,a[0],a[1],a[2]);if(!isnan(heading))lpp.addDirection(TELEM_CHANNEL_MOTION,heading);}}
  return lpp.copy(out);}
 // CMD_SEND_TELEMETRY_REQ {39,0,0,0}: the app asks for this device's own telemetry. MyMesh answers it whatever the
 // telemetry modes say (they only gate other nodes' requests).

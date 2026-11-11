@@ -8,7 +8,7 @@
 #include "services/home_data.h"
 namespace mm {
 enum class WeatherPhaseView {Closed,WifiOff,Connecting,NoNetwork,WaitingClock,Locating,Fetching,Ready,Error};
-enum class Page { Home,Launcher,Messages,Chat,NewChat,Settings,Controls,Mesh,Radio,GPS,Maps,Weather,Info,Files,Wifi,Bluetooth,Terminal,DateTime,Updates,Battery,Power,Audio,Wallpaper,Antenna,Storage,QuickSettings,Cli,ContactPicker,Support,Keyboard,AccentKey,HomeWidgets,BesideClock,MainArea,Note,DmPath,RadioLink,RadioLinkSettings,WebApp};
+enum class Page { Home,Launcher,Messages,Chat,NewChat,Settings,Controls,Mesh,Radio,GPS,Maps,Weather,Info,Files,Wifi,Bluetooth,Terminal,DateTime,Updates,Battery,Power,Audio,Wallpaper,Antenna,Storage,QuickSettings,Cli,ContactPicker,Support,Keyboard,AccentKey,HomeWidgets,BesideClock,MainArea,Note,DmPath,RadioLink,RadioLinkSettings,WebApp,Motion};
 struct Conversation { std::string name,scope,preview,time="--:--",sender,age="--";bool direct=false;int id=0,unread=0,activity=0; };
 struct Message {std::string sender,time,body,meta;bool mine;std::string path,heard,scope;int hops=-1;uint32_t token=0;int repeaters=-1;Message(std::string s="",std::string t="",std::string b="",std::string m="",bool own=false):sender(std::move(s)),time(std::move(t)),body(std::move(b)),meta(std::move(m)),mine(own){} };
 struct ContactRow {std::string name,detail;};
@@ -21,6 +21,7 @@ struct State {
  struct DmPathRepeater {std::string name,prefix;};
  std::string dmPathName,dmPathRoute,dmPathOrigin,dmPathDraft,dmPathInput;int dmPathMode=0,dmPathHashBytes=2,dmPathFocus=0;bool dmPathEditing=false;std::vector<DmPathRepeater> dmPathRepeaters;
  const uint8_t *mapBits=nullptr;int mapSelfX=-1,mapSelfY=-1,mapScalePx=0;bool mapFollow=false,mapFull=false,messageRouteView=false;std::string mapStatus,mapScaleLabel;std::vector<MapPin> mapPins;std::vector<MapSegment> mapRoute;std::vector<std::string> mapLegend;
+ int mapHeading=-1;bool mapHeadingUp=false;// own heading in degrees (-1 unknown): arrow on the self marker; heading up shifts the view ahead
  bool historyLoading=false;std::string historyError;
  // Companion link (41 pairing, 42 companion settings): rlEditing 0 none, 1 PIN, 2 name, 3 region.
  struct RadioLinkPeerRow {std::string name;int rssi=0;};
@@ -45,6 +46,8 @@ int dictationLanguage=2;uint32_t dictationModelBytes=0;// Sound / dictation: sel
  int wifiOffset=0,wifiFocus=0;std::string wifiSSID,wifiIP,wifiMessage,wifiPasswordMask;struct Network{std::string ssid;int rssi=0;bool secured=true,saved=false;};std::vector<Network> networks;bool wifiSavedOpen=false;std::vector<std::string> wifiSaved;int wifiSavedOffset=0,wifiSavedFocus=0,wifiForgetArmed=-1;
  bool weatherValid=false,weatherBusy=false,locationValid=false,gpsFix=false;
  bool gpsEnabled=true,gpsAvailable=false,gpsData=false,gpsNmeaFresh=false,gpsTimeValid=false,gpsTemporary=false;unsigned gpsUsed=0,gpsVisible=0,gpsBaud=0;
+ // Settings > Motion / compass: motionPhase 0 off, 1 powering, 2 loading firmware (motionLoad %), 3 ready, 4 not detected, 5 failed.
+ bool motionEnabled=true,motionRaise=false,motionHeadingUp=false,motionTelemetry=false,motionHeadingValid=false,motionAnchored=false;int motionSensitivity=1,motionPhase=0,motionLoad=0,motionHeading=0,motionFocus=0;uint32_t motionAnchorAge=0;std::string motionError;
  float temperature=0,humidity=0,pressure=0,wind=0,high=0,low=0;int weatherCode=2;double latitude=0,longitude=0,altitude=0;int satellites=0;
  std::string weatherText="No weather data",weatherUpdated,weatherMessage,weatherPlace,weatherSource;
  WeatherPhaseView weatherPhase=WeatherPhaseView::Closed;int weatherHours=0;float apparent=0;int weatherHourCode[4]={};float weatherHourTemp[4]={};std::string weatherHourTime[4];
@@ -66,7 +69,7 @@ bool batteryEstimated=false,batteryCharging=false,batteryFull=false;
  struct NearbyNode {std::string name,label;/* label: "820 m NE" */int meters=0,bearing=0;bool live=false;};
  struct MainWidgetData {std::vector<TimelineRow> timeline;std::vector<NearbyNode> nearby;bool here=false;/* here: own position known (radar) */
   int packets[mm_home::PacketBuckets]={};int packetsHour=0,nodesHeard=0;float bestSnr=0;bool snrKnown=false;
-  std::string utm,spokenLat,spokenLon;int hdopHundredths=-1;
+  std::string utm,spokenLat,spokenLon;int hdopHundredths=-1;int northAngle=-1;/* heading-up radar: screen angle of north in degrees, -1 north up */
   std::vector<int> elevation;int climb=0;std::string elevationFrom;std::string note;};
  int homeMain=MainWidgetDefault,homeMainFocus=MainWidgetDefault,homeWidgetsRow=0;/* homeWidgetsRow: focused row on Home widgets */MainWidgetData main;std::string noteInput;
  std::string homeFact;// MatterMesh widget: one rotating line under the contact count (nodes heard, uptime, a tip)

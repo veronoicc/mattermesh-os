@@ -59,6 +59,8 @@ extern "C"{
 #include "services/map_tiles.h"
 #include <esp_heap_caps.h>
 #include "services/location.h"
+#include "services/motion.h"
+#include "services/motion_policy.h"
 #include "services/time_sync.h"
 #include "services/time_zone.h"
 #include "services/battery.h"
@@ -158,6 +160,7 @@ static unsigned cursorAt();static void inputInsert(const String &text);volatile 
 String messageTime(uint32_t timestamp);void enterLockMode();void exitLockMode();void updateLockScreen();void handleLockKey(bool pressed,uint32_t capturedAt=0,bool hardwareDebounced=false);void serviceWhileDisplayBusy(const void*);void pollLockKey();void initTouch();void setTouchEnabled(bool enabled);void restoreLockedCpu();
 
 int supportTab=0;// Settings > Donate / Unlock: 0 Donate, 1 Extra apps
+int motionFocus=0;// Settings > Motion / compass: keyboard focus row (motion_app.inc)
 int launcherSelection=-1,settingsFocus=0,settingsScroll=0,filesScroll=0,filesCount=0;
 struct NavEntry{Screen screen;int section;};
 std::vector<NavEntry> navigation;
@@ -707,6 +710,7 @@ v.radioRepeat=matter::repeatEnabled();
  if(!deviceLocked&&((screen==Screen::Section&&section==10)||homeShowsWeather())){// the Weather page and the Home weather widgets draw these
  auto weather=device::weatherState();v.weatherValid=weather.data.valid;v.weatherBusy=weather.busy;v.temperature=weather.data.temperature;v.humidity=weather.data.humidity;v.pressure=weather.data.pressure;v.wind=weather.data.wind;v.high=weather.data.high;v.low=weather.data.low;v.weatherCode=weather.data.code;v.weatherText=weather.data.valid?device::weatherDescription(weather.data.code):"No weather data";v.weatherUpdated=weather.data.stamp;v.weatherPlace=weather.place.c_str();v.weatherMessage=weather.message.c_str();v.weatherPhase=mm::WeatherPhaseView(int(weather.phase));v.weatherSource=device::weatherSourceLabel(weather.data.source);v.apparent=weather.data.apparent;v.weatherHours=weather.data.hours;for(int i=0;i<device::WeatherHours&&i<4;i++){v.weatherHourCode[i]=weather.data.hourCode[i];v.weatherHourTemp[i]=weather.data.hourTemp[i];v.weatherHourTime[i]=weather.data.hourTime[i];}}
  auto location=device::locationState();v.locationValid=location.configured;v.latitude=location.latitude;v.longitude=location.longitude;v.gpsData=location.data;v.gpsNmeaFresh=location.nmeaFresh;v.gpsTimeValid=location.timeValid;v.gpsTemporary=location.timeLease&&!location.userEnabled;v.gpsUsed=location.satellitesUsed;v.gpsVisible=location.satellitesVisible;v.gpsBaud=location.baud;v.gpsFix=location.fix;v.gpsEnabled=location.enabled;v.gpsAvailable=location.available;v.status.gps=location.enabled&&location.available;v.status.acquiringTime=timeState.acquiring&&(location.enabled||connection.connected);if(timeState.acquiring&&!v.status.acquiringTime)v.timeSource="Time not synchronized";v.altitude=location.altitude;v.satellites=location.satellites;
+ {auto mo=device::motionState();v.motionEnabled=mo.enabled;v.motionRaise=mo.raise;v.motionHeadingUp=mo.headingUp;v.motionTelemetry=mo.telemetry;v.motionHeadingValid=mo.headingValid;v.motionAnchored=mo.anchored;v.motionSensitivity=mo.sensitivity;v.motionPhase=int(mo.phase);v.motionLoad=mo.loadPercent;v.motionHeading=int(lroundf(mo.heading))%360;v.motionAnchorAge=mo.anchorAgeMs==UINT32_MAX?0:mo.anchorAgeMs;v.motionError=mo.error;v.motionFocus=motionFocus;}
  v.wallpaper=lockWallpaper;v.wallpaperFocus=wallpaperFocus;v.kbdQuery=kbdQuery.c_str();v.kbdSearching=kbdSearching;v.kbdFocus=kbdFocus;v.kbdLang=int(kbdLang);v.kbdMask=kbdMask;if(mm_kbd::enabledCount(kbdMask)>1)v.status.keyboard=mm_kbd::info(kbdLang).code;auto power=device::powerState();v.displayLightEnabled=power.displayEnabled;v.keyboardLightEnabled=power.keyboardEnabled;v.displayTimeout=power.displaySeconds;v.keyboardTimeout=power.keyboardSeconds;v.powerField=powerField;
  time_t now=time(nullptr);if(now>=MM_EPOCH_MIN){/* localtime + 3 strftime only when the minute changes (~150 us each frame otherwise) */static time_t shownMinute=-1;static int shownZone=-1;static std::string clockText,dateText,menuDateText;if(now/60!=shownMinute||device::timeZone()!=shownZone){shownMinute=now/60;shownZone=device::timeZone();/* a new zone shows at once */struct tm tm;localtime_r(&now,&tm);char clock[6],date[30],menuDate[20];strftime(clock,sizeof(clock),"%H:%M",&tm);strftime(date,sizeof(date),"%a, %b %d, %Y",&tm);strftime(menuDate,sizeof(menuDate),"%a, %b %d",&tm);clockText=clock;dateText=date;menuDateText=menuDate;}v.menuDate=menuDateText;v.status.clock=clockText;v.date=dateText;}
  if(!deviceLocked&&(screen==Screen::Chats||(screen==Screen::Home&&homeMain==mm::MainChats)))v.conversations=conversationList();// Home: only the chat cards draw them
@@ -797,6 +801,7 @@ static void fillMainWidget(mm::State &v){
  if(id==mm::MainRadar){m.here=d.position;if(m.here){matter::NodePin pins[8];int n=matter::nearestNodePins(d.latitude,d.longitude,pins,8);
    for(int i=0;i<n;i++){mm::State::NearbyNode node;node.name=pins[i].name;node.live=pins[i].live;double meters=mm::geoDistanceMeters(d.latitude,d.longitude,pins[i].lat,pins[i].lon);node.meters=int(lround(meters));
     node.bearing=int(lround(mm::geoBearing(d.latitude,d.longitude,pins[i].lat,pins[i].lon)))%360;node.label=mm::formatDistance(meters,mm::geoHeading(d.latitude,d.longitude,pins[i].lat,pins[i].lon));m.nearby.push_back(node);}}
+ {float hd=0;if(id==mm::MainRadar&&m.here&&device::motionState().headingUp&&device::motionHeading(hd)){int h=int(lroundf(hd))%360;for(auto &n:m.nearby)n.bearing=device::relativeBearing(n.bearing,h);m.northAngle=int(lroundf(device::wrapDegrees(-hd)))%360;}}// heading up radar: where you face is at the top
 }
  if(id==mm::MainActivity){for(int i=0;i<mm_home::PacketBuckets;i++)m.packets[i]=packetHistory.at(i);m.packetsHour=packetHistory.lastHour();
   m.nodesHeard=matter::liveBestSnr(mm_home::PacketBuckets*mm_home::PacketBucketMs,m.bestSnr);m.snrKnown=m.nodesHeard>0;}// the same 6 h as the bars
@@ -827,6 +832,7 @@ void loadLights(){
  f.close();
 }
 mm::Page sectionPage(int id){
+ if(id==mm::MotionSection)return mm::Page::Motion;
  switch(id){case mm::WebAppSection:return mm::Page::WebApp;case mm::DmPathSection:return mm::Page::DmPath;case mm::RadioLinkSection:return mm::Page::RadioLink;case mm::RadioLinkSettingsSection:return mm::Page::RadioLinkSettings;case 1:return mm::Page::Mesh;case 2:return mm::Page::Radio;case 3:return mm::Page::GPS;case 4:return mm::Page::Wifi;case 5:return mm::Page::Battery;case 6:return mm::Page::Controls;case 7:return mm::Page::Files;case 8:return mm::Page::Info;case 9:return mm::Page::Maps;case 10:return mm::Page::Weather;case 11:return mm::Page::Terminal;case 14:return mm::Page::Bluetooth;case 16:return mm::Page::DateTime;case 17:return mm::Page::Updates;case mm::QuickSettingsSection:return mm::Page::QuickSettings;case 19:return mm::Page::Settings;case 20:return mm::Page::Power;case 21:return mm::Page::Audio;case 22:return mm::Page::Wallpaper;case mm::KeyboardSection:return mm::Page::Keyboard;case 23:return mm::Page::Antenna;case mm::AccentKeySection:return mm::Page::AccentKey;case mm::HomeWidgetsSection:return mm::Page::HomeWidgets;case mm::BesideClockSection:return mm::Page::BesideClock;case mm::MainAreaSection:return mm::Page::MainArea;case mm::NoteSection:return mm::Page::Note;case 24:return mm::Page::Storage;case mm::CliSection:return mm::Page::Cli;case mm::SupportSection:return mm::Page::Support;default:return mm::Page::Info;}
 }
 void renderSection(){
@@ -1094,6 +1100,7 @@ String *editableField(){
  if(screen==Screen::Section){if(mm::toolsSection(section))return toolsField();if(section==2&&radioPowerEditing)return &radioPowerInput;if(section==4&&wifiEditing)return wifiEditField==0?&wifiTarget:&wifiPassword;}
  return nullptr;
 }
+#include "motion_app.inc"
 #include "map_app.inc"
 #include "radio_link_app.inc"
 #include "web_app.inc"
@@ -1296,6 +1303,7 @@ void key(char c) {
   if(section==2&&radioPowerEditing){if(c=='\n'){saveRadioPower();return;}if(radioEditField==CompanionNameField){if(c>=32&&c<=126&&radioPowerInput.length()<matter::COMPANION_NAME_MAX_BYTES)radioPowerInput+=c;}else if(((c>='0'&&c<='9')||c=='-'||c=='+'||c=='.')&&radioPowerInput.length()<12)radioPowerInput+=c;notice="";repaintSettled();return;}
   if(section==6&&(c=='m'||c=='r'||c=='t')){if(c=='t')messageHaptic(true);else cycleVibration(c=='r',1);render();return;}
   if(section==21&&device::dictationLanguageKey(c)){stepDictationLanguage(device::dictationLanguageKey(c));render();return;}
+  if(section==mm::MotionSection){motionKey(c);return;}
   if(section==21){if(c=='h'){openSection(6);return;}else if(c=='n')device::audioNotifications(!device::audioState().notifications);else if(c=='t'||c=='\n')device::audioNotify(true);else if(c=='m'||c=='r')cycleRingtone(c=='r',1);else if(c=='j'||c=='k')device::audioVolume(device::audioState().volume+(c=='j'?5:-5));render();return;}
   if(section==4&&wifiEditing){if(c=='\n'){if(wifiEditField==0)wifiEditField=1;else{connectWifi();return;}}else if(c=='\t')wifiEditField=1-wifiEditField;else if(c>=32&&c<=126){String &field=wifiEditField==0?wifiTarget:wifiPassword;if(field.length()<(wifiEditField==0?32:63))field+=c;}repaintSettled();return;}
   if(section==mm::SupportSection){if(!device::otaAppsUnlocked()&&(c=='j'||c=='k'||c=='h'||c=='l'||c=='d'||c=='\n'||c==' ')){supportTab=1-supportTab;render();}return;}// unlocked Full: Donate only, no tabs
@@ -1477,6 +1485,7 @@ void tap(int x,int y) {
   if(section==17&&mm::UpdatesAction.contains(x,y)){otaAction();return;}
   if(section==3&&mm::GpsToggle.contains(x,y)){notice=device::locationToggleUser()?(device::locationState().enabled?"GPS enabled":"GPS disabled"):"GPS switch failed";render();return;}
   if(section==21&&mm::AudioBackend.contains(x,y)){stepDictationLanguage(mm::stepRowTap(mm::AudioBackend,x));render();return;}
+  if(section==mm::MotionSection){motionTap(x,y);return;}
   if(section==21){if(mm::AudioNotify.contains(x,y))device::audioNotifications(!device::audioState().notifications);else if(mm::AudioToneMessage.contains(x,y)||mm::AudioToneMention.contains(x,y)){bool mention=mm::AudioToneMention.contains(x,y);cycleRingtone(mention,mm::stepRowTap(mm::AudioToneMessage,x));}else if(mm::AudioMinus.contains(x,y))device::audioVolume(device::audioState().volume-5);else if(mm::AudioPlus.contains(x,y))device::audioVolume(device::audioState().volume+5);else if(mm::AudioSlider.contains(x,y)){int track=mm::AudioSlider.w-16;device::audioVolume((constrain(x-mm::AudioSlider.x-8,0,track)*20+track/2)/track*5);}render();return;}
   if(section==23){if(antennaConfirm){if(mm::ConfirmYes.contains(x,y))confirmAntenna();else if(mm::ConfirmNo.contains(x,y)){antennaConfirm=false;render();}}else if(mm::AntennaInternal.contains(x,y))requestAntenna(true);else if(mm::AntennaExternal.contains(x,y))requestAntenna(false);return;}
   if(section==mm::SupportSection){if(!device::otaAppsUnlocked())for(int i=0;i<2;i++)if(mm::supportTabRect(i).contains(x,y)&&supportTab!=i){supportTab=i;render();}return;}
@@ -1960,6 +1969,7 @@ void handle(const String &s) {
  if(s=="remote cli"){appCliToggle();Serial.printf("REMOTE_CLI %d\n",matter::remoteCli());return;}
  if(s=="wifi editor status"){Serial.printf("WIFI_EDITOR editing=%d hidden=%d visible=%d field=%d ssid_bytes=%u password_bytes=%u\n",wifiEditing,wifiHidden,wifiShowPassword,wifiEditField,wifiTarget.length(),wifiPassword.length());return;}
  if(s=="map status"){auto t=device::mapTilesState();Serial.printf("MAP_STATUS zoom=%d lat=%.5f lon=%.5f follow=%d visible=%d missing=%d sd=%d online=%d queued=%d downloaded=%lu stored=%lu failed=%lu\n",mapView.zoom,mapView.lat,mapView.lon,mapView.follow,mapVisibleCount,mapMissingCount,t.sd,t.online,t.queued,t.downloaded,t.stored,t.failed);return;}
+ if(s=="motion status"){auto m=device::motionState();Serial.printf("MOTION_STATUS enabled=%d phase=%d load=%d heading_valid=%d heading=%.1f anchored=%d anchor_age_ms=%lu raise=%d sensitivity=%d telemetry=%d heading_up=%d raises=%lu accel=%.2f,%.2f,%.2f error=%s\n",m.enabled,int(m.phase),m.loadPercent,m.headingValid,m.heading,m.anchored,(unsigned long)m.anchorAgeMs,m.raise,m.sensitivity,m.telemetry,m.headingUp,(unsigned long)m.raises,m.ax,m.ay,m.az,m.error);return;}
  if(s.startsWith("map zoom ")){mapZoomLimit=0;mapView.zoom=constrain(int(s.substring(9).toInt()),device::MapMinZoom,device::MapMaxZoom);device::mapTilesForget();render();return;}
  if(s.startsWith("map route ")){if(screen==Screen::Chat){String rest=s.substring(10);int bar=rest.indexOf('|');messageActions=messageBodyView=false;messagePath=messageRouteView=true;routeOpen((bar<0?rest:rest.substring(0,bar)).c_str(),bar<0?"":rest.substring(bar+1).c_str());render();}Serial.printf("MAP_ROUTE open=%d\n",screen==Screen::Chat&&messageRouteView);return;}
  if(s=="route status"){Serial.printf("ROUTE_STATUS open=%d loading=%d map=%d zoom=%d stops=%u segments=%u pins=%u self=%d summary=%s\n",messagePath&&messageRouteView,routeLoading(),routeView.map,routeView.zoom,unsigned(routeView.stops.size()),unsigned(routeView.segments.size()),unsigned(routeView.pins.size()),routeView.self,routeView.summary.c_str());return;}
@@ -2171,6 +2181,7 @@ void setup(){
  loadLights();device::powerBegin(displayBrightness,keyboardBrightness);loadChats();loadRegionScopes();loadChannelNotifications();loadVibrations();loadKeyboardLanguages();loadAccentMode();loadWallpaper();loadHomeWidget();loadHomeMain();
  advertGps=device::prefGetInt("mmadvert","gps",0)!=0;
  device::audioBegin(expander,expanderReady);
+ device::motionBegin(expander,expanderReady);
  if(sdReady){loadBindings();radioJournal.begin(SD);
   uint32_t latest[MAX_CHATS]={};for(auto &record:radioJournal.index)if(!record.mine&&record.chat>=0&&record.chat<chatCount)latest[record.chat]=record.token;
   for(int i=0;i<chatCount;i++)if(!(radioJournal.readTrackedChats&(uint32_t(1)<<i)))radioJournal.markRead(i,latest[i]);
@@ -2237,6 +2248,7 @@ void loop(){
   {bool page=!deviceLocked&&screen==Screen::Section&&section==10;/* the Weather page refreshes on opening; the widgets keep the 15 min rhythm across unlocks */
    static bool onPage=false;if(page&&!onPage)device::weatherRefreshIfOlder(device::WEATHER_REOPEN_FRESH_MS);/* already open for the widgets */onPage=page;
    device::weatherSetOpen(page||(!deviceLocked&&(homeShowsWeather()||(homeWeatherChosen()&&(screen==Screen::Chats||screen==Screen::Chat)))),page?device::WEATHER_REOPEN_FRESH_MS:device::WEATHER_REFRESH_MS);}device::weatherLoop();device::mapTilesLoop();device::otaLoop(device::wifiConnected(),lastPaint!=0);appLinkLoop();}
+ {static uint32_t motionAt=0;if(uint32_t(millis()-motionAt)>=(deviceLocked?100u:20u)){motionAt=millis();device::motionLoop();motionTick();}}
  static uint32_t timeRevision=0;auto clockRevision=device::timeSyncState().revision;if(clockRevision!=timeRevision){timeRevision=clockRevision;lockScreenDirty=true;if(!deviceLocked){markRadioDirty();}}
  appVisibilityLoop();welcomeWifiLoop();radioLinkLoop();toolsTick();pollKeyboard();pollQuickReply();pollLockKey();pollPendingKeys();if(deviceLocked){if(quickReply.active)pollTouch();updateLockScreen();if(refreshTracker.maintenanceDue()&&!quickReply.active&&!lockScreenDirty&&uint32_t(millis()-lastPaint)>=2500&&uint32_t(millis()-lastMaintenanceAt)>=60000){lastMaintenanceAt=millis();forceFullRefresh=true;render();}delay(quickReply.active?5:20);return;}
  // Connectivity / weather / GPS revisions repaint only the pages that draw them; elsewhere only a status-bar icon change counts.

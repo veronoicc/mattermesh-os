@@ -66,7 +66,7 @@ void appLinkBegin(){
  matter::CompanionHooks h;h.batteryMv=[]()->uint16_t{return uint16_t(device::batteryState().voltage);};
  h.storageUsedKb=[]()->uint32_t{return sdReady?uint32_t(SD.usedBytes()/1024):0;};h.storageTotalKb=[]()->uint32_t{return sdReady?uint32_t(SD.totalBytes()/1024):0;};
  h.reboot=[](){Serial.flush();delay(300);ESP.restart();};h.pin=appPin;h.setPin=appSetPin;h.location=appLocation;h.setLocation=appSetLocation;h.setChannel=appSetChannel;
- h.gpsAvailable=[]{return device::locationState().available;};h.gpsEnabled=[]{return device::locationState().userEnabled;};h.setGps=[](bool on){return device::locationEnabled(on);};
+ h.gpsAvailable=[]{return device::locationState().available;};h.gpsEnabled=[]{return device::locationState().userEnabled;};h.setGps=[](bool on){return device::locationEnabled(on);};h.motion=[](float a[3],float &heading){return device::motionTelemetry(a,heading);};
  h.disableTransports=appStopLinks;h.wipe=appWipe;h.runCli=cliRunBuffer;matter::companionHooks(h);
  device::bleCompanionConfig(matter::snapshot().config.name,appPinValue);// before connectivityBegin(): the BLE name comes from the node name
 }
