@@ -406,7 +406,7 @@ void Renderer::chat(const State &s){
   for(int i=0;i<int(items.size())&&i<EmojiPageSize;i++){Rect r=emojiChoiceRect(i);bool on=s.emojiFocus==i;if(on)c.card(r,true,5);g.drawBitmap(r.x+(r.w-24)/2,r.y+(r.h-24)/2,mm_emoji_picker::glyphs[items[i]].pixels,24,24,on?BG:FG);}
   int footY=EmojiPopup.y+EmojiPopup.h-15;c.text(EmojiPopup.x+8,footY,s.emojiTab?mm_emoji_picker::categories[s.emojiTab-1].label:"Most used",Font::ChatMeta);std::string hint="N/M tab  ENTER add";c.text(EmojiPopup.x+EmojiPopup.w-8-c.width(hint,Font::ChatMeta),footY,hint,Font::ChatMeta);
  }
- if(s.messageMenu){g.fillRect(0,Top,W,H-Top,BG);Rect info={Margin,Top+4,W-2*Margin,Bottom-Top-8};g.fillRect(info.x,info.y,info.w,info.h,BG);c.card(info);c.text(info.x+8,info.y+8,"Chat options",Font::ChatTitle);const char *labels[]={"Region scope","Clear chat","Send GPS position",s.chatOpenUnread?"Open at: unread":"Open at: latest","Path"};for(int i=0;i<chatOptionCount(s.chatDirect);i++)c.button(chatOptionRect(i),labels[i],s.chatMenuFocus==i);}
+ if(s.messageMenu){g.fillRect(0,Top,W,H-Top,BG);Rect info={Margin,Top+4,W-2*Margin,Bottom-Top-8};g.fillRect(info.x,info.y,info.w,info.h,BG);c.card(info);c.text(info.x+8,info.y+8,"Chat options",Font::ChatTitle);const char *labels[]={"Region scope","Clear chat","Send GPS position",s.chatOpenUnread?"Open at: unread":"Open at: latest","Path","Quick messages","Send later"};for(int i=0;i<chatOptionCount(s.chatDirect);i++)c.button(chatOptionRect(i),labels[chatOptionId(i,s.chatDirect)],s.chatMenuFocus==i);}
  if(s.scopePicker){
   Rect panel=overlayPanel();c.text(Margin+8,Top+12,s.notice.empty()?"Region scope":s.notice,s.notice.empty()?Font::ChatTitle:Font::ChatMeta,FG,panel.w-16);
   int offset=std::max(0,std::min(s.scopeOffset,std::max(0,int(s.regionScopes.size())-1)));
@@ -415,6 +415,7 @@ void Renderer::chat(const State &s){
   if(s.scopeEditing){g.fillRect(0,Top,W,H-Top,BG);c.card(panel);c.text(Margin+8,Top+12,"Add region scope",Font::ChatTitle);c.text(Margin+8,Top+46,"Example: it-lig",Font::ChatMeta);c.text(Margin+8,Top+62,"Letters, numbers and hyphens",Font::ChatMeta,FG,panel.w-16);c.card(ScopeInput);c.text(ScopeInput.x+7,ScopeInput.y+10,s.scopeInput.empty()?"Type a region...":s.scopeInput,Font::ChatBody,FG,ScopeInput.w-14);c.button(ScopeSave,"SAVE");c.button(ScopeEditCancel,"CANCEL");if(!s.notice.empty())c.text(Margin+8,Top+185,s.notice,Font::ChatMeta,FG,panel.w-16);}
  }
  if(s.clearChatConfirm){Rect panel=overlayPanel();c.text(Margin+8,Top+15,"Clear all messages?",Font::ChatTitle,FG,panel.w-16);c.text(Margin+8,Top+56,"Channel and scope are kept.",Font::ChatMeta,FG,panel.w-16);c.button(ChatClearYes,"CLEAR CHAT");c.button(ChatClearNo,"CANCEL");if(!s.notice.empty())c.text(Margin+8,Top+215,s.notice,Font::ChatMeta,FG,panel.w-16);}
+ if(s.quick.picker)quickPicker(s);// Quick messages picker over the chat
 
  if(s.positionShare){
   Rect panel=overlayPanel();c.text(Margin+8,Top+15,"Share position",Font::ChatTitle,FG,panel.w-16);
@@ -431,6 +432,7 @@ void Renderer::chat(const State &s){
   Rect panel={Margin,Top+4,W-2*Margin,Bottom-Top-8};g.fillRect(panel.x,panel.y,panel.w,panel.h,BG);c.card(panel);
   c.text(panel.x+8,Top+12,"Your message",Font::ChatTitle);
   c.button(ownMessageActionRect(0),"RESEND");
+  c.button(ownMessageActionRect(5),"DELIVERY");
   c.text(panel.x+8,Top+76,"REPEATERS HEARD / "+(s.contextMessage.repeaters<0?std::string("--"):std::to_string(s.contextMessage.repeaters)),Font::ChatMeta);
   int start=std::max(0,std::min(s.heardOffset,std::max(0,int(s.heardPeers.size())-HeardRows)));
   for(int i=0;i<HeardRows&&start+i<int(s.heardPeers.size());i++)c.text(panel.x+8,HeardListY+i*HeardRowH,s.heardPeers[start+i],Font::ChatMeta,FG,panel.w-16);
@@ -622,6 +624,7 @@ void Renderer::settings(const State &s){
    case 2:return s.rlOn?"Off: companion radio in use":s.radioReady?"SX1262 ready":"Offline";case CellularSection:return !s.cell.modem?"Off":s.cell.phase==device::ModemPhase::Registered?(s.cell.op.empty()?"On":s.cell.op)+" "+std::to_string(s.cell.bars)+"/4":device::modemPhaseText(s.cell.phase);case RadioLinkSection:return !s.rlOn?(s.rlSaved?std::string("Off"):std::string("Use another radio")):(s.rlReady?"In use: "+s.rlSavedName:"Connecting: "+s.rlSavedName);case 23:return s.radioInternal?"Internal antenna":"External antenna";
    case 3:return s.gpsEnabled?"On":"Off";case 6:return "Lights / haptics";case TracksSection:return s.trkRecording?"Recording":s.trkAuto?"Auto-start on":"Off";
    case MotionSection:return !s.motionEnabled?"Off":s.motionPhase==2?"Loading "+std::to_string(s.motionLoad)+"%":s.motionPhase==4?"Not detected":s.motionPhase==5?"Failed":s.motionHeadingValid?std::to_string(s.motionHeading)+"° "+device::compassName(float(s.motionHeading)):s.motionRaise?"Raise to wake on":"On";
+   case QuickMessagesSection:return s.quick.summary.empty()?"Canned chat messages":s.quick.summary;
    case 22:return std::string("Lock screen: ")+mm_wallpaper::list[s.wallpaper>=0&&s.wallpaper<mm_wallpaper::count?s.wallpaper:0].name;
    case KeyboardSection:{std::string codes;for(auto l:mm_kbd::Order)if(s.kbdMask&(1u<<int(l))){if(!codes.empty())codes+=" ";codes+=mm_kbd::info(l).code;}return mm_kbd::enabledCount(s.kbdMask)>1?codes+" (Alt + Space)":"Typing: "+std::string(mm_kbd::info(mm_kbd::Lang(s.kbdLang)).name);}
    case AccentKeySection:return s.accentMode==1?"Right Shift":s.accentMode==2?"Left Shift":"Off";
@@ -1017,11 +1020,15 @@ void Renderer::section(const State &s){
 #include "sms_renderer.inc"
 #include "selftest_renderer.inc"
 #include "notes_renderer.inc"
+#include "quickmsg_renderer.inc"
+#include "delivery_renderer.inc"
+#include "scheduled_renderer.inc"
 void Renderer::radioLinkAsk(){Rect panel=overlayPanel();c.text(Margin+8,Top+15,"Companion connected",Font::ChatTitle,FG,panel.w-16);c.text(Margin+8,Top+50,"Download the messages",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+66,"from the companion?",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+90,"No: they stay on it,",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+106,"new ones too.",Font::ChatMeta,FG,panel.w-16);c.button(RadioLinkAskNo,"NO");c.button(RadioLinkAskYes,"YES",true);}
 
 void Renderer::draw(const State &s){switch(s.page){
  case Page::SelfTest:selfTestApp(s);break;
  case Page::RadioLink:case Page::RadioLinkSettings:case Page::WebApp:radioLinkPages(s);break;case Page::TracksApp:case Page::TracksSettings:tracksPages(s);break;case Page::DmPath:dmPathPage(s);break;case Page::Cli:cliApp(s);break;case Page::RxLog:rxLogApp(s);break;case Page::NoiseFloor:noiseApp(s);break;case Page::RptScanner:rptApp(s);break;case Page::Cellular:cellularPage(s);break;case Page::Sms:smsPage(s);break;
  case Page::Notes:notesPage(s);break;
+ case Page::QuickMessages:quickPage(s);break;case Page::Delivery:deliveryPage(s);break;case Page::Scheduled:scheduledPage(s);break;
  case Page::Home:home(s);break;case Page::Launcher:launcher(s);break;case Page::Messages:messages(s);break;case Page::Chat:chat(s);break;case Page::NewChat:form(s);break;case Page::ContactPicker:contactPicker(s);break;case Page::Settings:settings(s);break;case Page::QuickSettings:quickSettings(s);break;default:section(s);}if(s.channelOptions)channelOptions(s);}
 }

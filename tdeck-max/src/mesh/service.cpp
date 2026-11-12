@@ -102,7 +102,8 @@ static String receivedPath(const mesh::Packet *p){if(!p->isRouteFlood())return "
 static struct {bool active=false;uint32_t at=0,revision=0;uint8_t hash[MAX_HASH_SIZE]={};RepeaterObserver repeaters;} advertEcho;
 static bool airTraceOn=false;void companionAirTrace(bool on){airTraceOn=on;}
 static uint32_t airHash(mesh::Packet *p){uint8_t h[MAX_HASH_SIZE];p->calculatePacketHash(h);uint32_t v;memcpy(&v,h,4);return v;}// first 4 bytes: a repeater's echo of our flood shows the same value on TX and RX
-static void observeEcho(mesh::Packet *p){if(!p->isRouteFlood())return;uint8_t hash[MAX_HASH_SIZE];p->calculatePacketHash(hash);if(advertEcho.active&&!memcmp(hash,advertEcho.hash,MAX_HASH_SIZE)&&advertEcho.repeaters.observe(p->path,p->getPathHashCount(),p->getPathHashSize()))advertEcho.revision++;for(auto &e:echoes)if(e.active&&millis()-e.seenAt<600000&&!memcmp(hash,e.hash,MAX_HASH_SIZE)){if(e.repeaters.observe(p->path,p->getPathHashCount(),p->getPathHashSize())){Delivery d;d.token=e.token;d.repeaters=e.repeaters.count;if(p->getPathHashCount())d.firstRepeater=hex(p->path,p->getPathHashSize());for(int i=0;i<e.repeaters.count;i++){if(i)d.heard+=",";d.heard+=hex(e.repeaters.hashes[i],e.repeaters.sizes[i]);}deliveredCallback(d);}break;}}
+static void deliveryEvent(Delivery &d,delivery::Kind kind,const String &arg=""){d.hasEvent=true;d.event=kind;d.eventArg=arg;}// the typed timeline event next to the state text
+static void observeEcho(mesh::Packet *p){if(!p->isRouteFlood())return;uint8_t hash[MAX_HASH_SIZE];p->calculatePacketHash(hash);if(advertEcho.active&&!memcmp(hash,advertEcho.hash,MAX_HASH_SIZE)&&advertEcho.repeaters.observe(p->path,p->getPathHashCount(),p->getPathHashSize()))advertEcho.revision++;for(auto &e:echoes)if(e.active&&millis()-e.seenAt<600000&&!memcmp(hash,e.hash,MAX_HASH_SIZE)){if(e.repeaters.observe(p->path,p->getPathHashCount(),p->getPathHashSize())){Delivery d;d.token=e.token;d.repeaters=e.repeaters.count;if(p->getPathHashCount())d.firstRepeater=hex(p->path,p->getPathHashSize());for(int i=0;i<e.repeaters.count;i++){if(i)d.heard+=",";d.heard+=hex(e.repeaters.hashes[i],e.repeaters.sizes[i]);}deliveryEvent(d,delivery::Kind::HeardRepeater,hex(e.repeaters.hashes[e.repeaters.count-1],e.repeaters.sizes[e.repeaters.count-1]));deliveredCallback(d);}break;}}
 
 // Companion link: the companion builds and sends the packet, so its hash is unknown here. The first copy it hears
 // back is found by decrypting each group text with the sent channel key (same timestamp and text); its hash then
@@ -140,7 +141,7 @@ static void dmNoAck();
 static bool dmQueued(uint32_t token);
 static void trackTX(uint32_t token,bool direct){for(auto &t:outgoing)if(!t.packet){t.packet=pool.getOutboundByIdx(pool.getOutboundTotal()-1);t.token=token;t.direct=direct;if(t.packet&&t.packet->isRouteFlood()){auto &e=echoes[nextEcho++%16];e=EchoTrack();e.active=true;e.token=token;e.seenAt=millis();t.packet->calculatePacketHash(e.hash);}break;}}
 static bool dmQueued(uint32_t token){for(auto &t:outgoing)if(t.token==token&&t.packet)for(int i=0;i<pool.getOutboundTotal();i++)if(pool.getOutboundByIdx(i)==t.packet)return true;return false;}
-static void txFinished(mesh::Packet *packet,bool success){for(auto &t:outgoing)if(t.packet==packet){Delivery d;d.txComplete=true;d.txSuccess=success;d.token=t.token;d.state=success?(t.direct?(pending.active&&pending.token==t.token?pending.route+": sent, awaiting ACK":String("Sent / awaiting ACK")):"Sent / no group ACK"):"TX failed";deliveredCallback(d);if(t.direct&&pending.active&&pending.token==t.token){pending.transmitted=success;pending.deadline=millis()+pending.timeout;if(!success)pending.active=false;}t.packet=nullptr;break;}}
+static void txFinished(mesh::Packet *packet,bool success){for(auto &t:outgoing)if(t.packet==packet){Delivery d;d.txComplete=true;d.txSuccess=success;d.token=t.token;d.state=success?(t.direct?(pending.active&&pending.token==t.token?pending.route+": sent, awaiting ACK":String("Sent / awaiting ACK")):"Sent / no group ACK"):"TX failed";if(success)deliveryEvent(d,delivery::Kind::TxDone,t.direct&&pending.active&&pending.token==t.token?pending.route:String());else deliveryEvent(d,delivery::Kind::Failed,"TX failed");deliveredCallback(d);if(t.direct&&pending.active&&pending.token==t.token){pending.transmitted=success;pending.deadline=millis()+pending.timeout;if(!success)pending.active=false;}t.packet=nullptr;break;}}
 
 static void rptCommandReply(const ContactInfo &c,const char *text);// RPT Scanner console (block at the end of this file)
 // Companion app link (companion.inc, end of file): messages for the app's offline queue, ACKs of the app's sends.
@@ -187,7 +188,7 @@ protected:
  void onContactsFull()override{if(contactsReplaceOldest()&&contactsDeleteOldest(1))return;companion::contactsFull();}// replace oldest: the new contact takes the freed slot at its next advert; else the app is told the storage is full
  void onContactOverwrite(const uint8_t *pub)override{companion::contactDeleted(pub);}
  void onContactPathUpdated(const ContactInfo &c)override{dmRouteApply(const_cast<ContactInfo&>(c));/* a manual path stays */companion::pathUpdated(c);contactsDirty=true;saveAt=millis();}
- ContactInfo *processAck(const uint8_t *data)override{companion::ackReceived(data);uint32_t ack;memcpy(&ack,data,4);if(pending.active&&(pending.ack==ack||(pending.firstAck&&pending.firstAck==ack))){auto contact=lookupContactByPubKey(pending.key,32);Delivery d;d.token=pending.token;d.state=pending.route+": delivered";deliveredCallback(d);pending.active=false;return contact;}return checkConnectionsAck(data);}
+ ContactInfo *processAck(const uint8_t *data)override{companion::ackReceived(data);uint32_t ack;memcpy(&ack,data,4);if(pending.active&&(pending.ack==ack||(pending.firstAck&&pending.firstAck==ack))){auto contact=lookupContactByPubKey(pending.key,32);Delivery d;d.token=pending.token;d.state=pending.route+": delivered";deliveryEvent(d,delivery::Kind::AckReceived,pending.route);deliveredCallback(d);pending.active=false;return contact;}return checkConnectionsAck(data);}
  void onMessageRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *t)override{markConnectionActive(c);deliver(c,p,ts,t,nullptr,c.type!=ADV_TYPE_REPEATER);}// a repeater's plain message is the app's only (its CLI replies come through onCommandDataRecv)
  void onCommandDataRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *text)override{markConnectionActive(c);rptCommandReply(c,text);companion::queueContact(c,p,ts,text,1);}// CLI reply of a server: the app's queue, and the RPT Scanner console when it asked
  void onCLICommandRecv(const ContactInfo &c,mesh::Packet *p,uint32_t ts,const char *command,char *reply)override{markConnectionActive(c);companion::remoteCli(c,p,ts,command,reply);}// opt-in, see remote_cli.h
@@ -247,8 +248,8 @@ static void dmNoAck(){
  if(pending.learned&&!pending.retried)if(auto c=chatMesh().lookupContactByPubKey(pending.key,32)){c->out_path_len=OUT_PATH_UNKNOWN;contactsDirty=true;saveAt=millis();
   String old=currentScope;currentScope=pending.scope;uint32_t ack,timeout;int result=chatMesh().sendMessage(*c,pending.timestamp,1,pending.text.c_str(),ack,timeout);currentScope=old;
   if(result){pending.retried=true;pending.learned=false;pending.queuedAt=millis();pending.route="Flood (retry)";pending.firstAck=pending.ack;pending.ack=ack;pending.timeout=timeout;pending.transmitted=false;trackTX(pending.token,true);
-   Delivery d;d.token=pending.token;d.state="No ACK: retrying by flood";deliveredCallback(d);return;}}
- Delivery d;d.token=pending.token;d.state=pending.manual?String("Manual path: no ACK"):pending.route+": no ACK";deliveredCallback(d);pending.active=false;}
+   Delivery d;d.token=pending.token;d.state="No ACK: retrying by flood";deliveryEvent(d,delivery::Kind::RetryFlood);deliveredCallback(d);return;}}
+ Delivery d;d.token=pending.token;d.state=pending.manual?String("Manual path: no ACK"):pending.route+": no ACK";deliveryEvent(d,delivery::Kind::NoAck,pending.manual?String("Manual path"):pending.route);deliveredCallback(d);pending.active=false;}
 
 static uint32_t freqKHz(float mhz){return uint32_t(lroundf(mhz*1000.0f));}
 static bool valid(const Config &c){return validRadioParameters(c.frequency,c.bandwidth,c.sf,c.cr,c.power)&&validCompanionName(c.name.c_str())&&validPathHashBytes(c.pathBytes);}
@@ -269,18 +270,21 @@ bool begin(fs::FS &fs,ExtensionIOXL9555 &io,bool ioReady,Receiver receiver,Deliv
  if(!initRadio())return false;chatMesh().begin();chatMesh().loadContacts();dmRoutesLoad();state.ready=true;return true;
 }
 uint32_t nodesRevision(){return nodeChanges;}
+// millis() of the newest advert heard from a repeater / from the node with this key (hex) since boot; 0 when none.
+uint32_t lastRepeaterHeardMs(){uint32_t best=0;for(int i=0;i<discoveredCount;i++){auto &n=discovered[i];if(n.live&&n.type==ADV_TYPE_REPEATER&&n.seen&&(!best||int32_t(n.seen-best)>0))best=n.seen;}return best;}
+uint32_t keyHeardMs(const String &key){for(int i=0;i<discoveredCount;i++){auto &n=discovered[i];if(n.live&&n.seen&&!strcasecmp(n.key,key.c_str()))return n.seen;}return 0;}
 
 bool radioSuspend(bool off){if(!state.ready)return false;
  if(off==state.suspended)return true;
  if(off&&!repeat_policy::mayStopRadio(state.config.repeat))return false;// a repeater that stops listening silently stops repeating
  // A DM still queued or waiting goes with the radio: its packet leaves the queue (no stale send after a wake).
  if(off&&pending.active){for(auto &o:outgoing)if(o.token==pending.token&&o.packet){for(int i=0;i<pool.getOutboundTotal();i++)if(pool.getOutboundByIdx(i)==o.packet){pool.free(pool.removeOutboundByIdx(i));break;}o.packet=nullptr;}
-  Delivery d;d.token=pending.token;d.state="Not sent: radio off (companion link)";deliveredCallback(d);pending.active=false;}
+  Delivery d;d.token=pending.token;d.state="Not sent: radio off (companion link)";deliveryEvent(d,delivery::Kind::Failed,"Radio off (companion)");deliveredCallback(d);pending.active=false;}
  if(off){radio.standby();radio.sleep(true);state.suspended=true;state.rx=false;return true;}
  state.suspended=false;state.ready=initRadio();return state.ready;}
 
 void loop(){if(!state.ready||state.suspended)return;chatMesh().loop();driver.loop();if(pending.active&&pending.transmitted&&int32_t(millis()-pending.deadline)>0)dmNoAck();
- if(pending.active&&!pending.transmitted&&millis()-pending.queuedAt>60000&&!dmQueued(pending.token)){Delivery d;d.token=pending.token;d.state="TX failed";deliveredCallback(d);pending.active=false;}/* gone from the queue untransmitted (a slow duty-cycle wait is not a failure) */if(contactsDirty&&millis()-lastContactsAttempt>=3000&&(millis()-saveAt>3000||millis()-lastContactsSave>=120000)&&!busy()){lastContactsAttempt=millis();if(chatMesh().saveContacts()){lastContactsSave=millis();contactsDirty=false;}}}
+ if(pending.active&&!pending.transmitted&&millis()-pending.queuedAt>60000&&!dmQueued(pending.token)){Delivery d;d.token=pending.token;d.state="TX failed";deliveryEvent(d,delivery::Kind::Failed,"Left the TX queue");deliveredCallback(d);pending.active=false;}/* gone from the queue untransmitted (a slow duty-cycle wait is not a failure) */if(contactsDirty&&millis()-lastContactsAttempt>=3000&&(millis()-saveAt>3000||millis()-lastContactsSave>=120000)&&!busy()){lastContactsAttempt=millis();if(chatMesh().saveContacts()){lastContactsSave=millis();contactsDirty=false;}}}
 RadioLevels radioLevels(){RadioLevels l;if(!state.ready)return l;l.noiseFloor=driver.getNoiseFloor();if(auto p=rxPackets.newest(0)){l.received=true;l.rssi=p->rssi();l.snr=p->snr();}return l;}
 RadioDiag radioDiag(){RadioDiag d;d.tcxo=tcxoVoltage;d.noiseFloor=driver.getNoiseFloor();d.received=driver.getPacketsRecv();d.recvErrors=driver.getPacketsRecvErrors();if(state.ready){d.boosted=radio.getRxBoostedGainMode();d.deviceErrors=radio.getDeviceErrors();if(d.received){d.rssi=driver.getLastRSSI();d.snr=driver.getLastSNR();}}/* SPI reads: not on a sleeping SX1262 */return d;}
 // Noise Floor app: the SX1262 instantaneous RSSI over SPI, only from an idle RX radio (not asleep, transmitting or mid-packet); never blocks.
@@ -392,7 +396,7 @@ bool send(int id,const String &peer,const String &scope,const String &text,uint3
  struct ScopeGuard {String old;~ScopeGuard(){currentScope=old;}} guard{currentScope};currentScope=scope;if(peer.length()){if(pending.active){reason="Waiting for ACK";return false;}uint8_t key[32];if(!unhex(peer,key,32)){reason="Invalid contact key";return false;}auto c=chatMesh().lookupContactByPubKey(key,32);if(!c){reason="Contact not discovered";return false;}auto mode=dmRouteApply(*c);uint32_t ack,timeout;int result=chatMesh().sendMessage(*c,timestamp,0,text.c_str(),ack,timeout);if(!result){reason="TX queue full";return false;}
   pending=Pending();pending.active=true;pending.queuedAt=millis();pending.token=token;pending.ack=ack;pending.timeout=timeout;pending.timestamp=timestamp;pending.text=text;pending.scope=scope;memcpy(pending.key,key,32);
   pending.route=dmRouteLabel(result==MSG_SEND_SENT_DIRECT?int(c->out_path_len&63):-1);pending.learned=result==MSG_SEND_SENT_DIRECT&&mode==DmRouteMode::Auto;pending.manual=mode==DmRouteMode::Manual;
-  trackTX(token,true);reason=pending.route+": queued, awaiting ACK";}
+  trackTX(token,true);if(pending.manual){Delivery d;d.token=token;deliveryEvent(d,delivery::Kind::ManualPath,pending.route);deliveredCallback(d);}reason=pending.route+": queued, awaiting ACK";}
  else{ChannelDetails ch;if(id<0||!chatMesh().getChannel(id,ch)||!ch.name[0]){reason="Channel key required";return false;}explicitGroupScope=true;bool queued=chatMesh().sendGroupMessage(timestamp,ch.channel,state.config.name.c_str(),text.c_str(),text.length());explicitGroupScope=false;if(!queued){reason="TX queue full";return false;}trackTX(token,false);reason="Queued / no group ACK";}
  return true;
 }

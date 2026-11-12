@@ -186,6 +186,12 @@ void mapOpen();void mapClose();void routeOpen(const std::string &path,const std:
 void tracksOpen(int id);void tracksLeft(int next);void tracksCompose(mm::State &v);bool tracksBack();bool tracksKey(char c);bool tracksTap(int x,int y);bool tracksScroll(int dy);void tracksUiLoop();bool tracksSerial(const String &s);// tracks_app.inc
 void notesBegin();void notesOpen();void notesLeft();void notesCompose(mm::State &v);bool notesBack();bool notesKey(char c);bool notesTap(int x,int y);bool notesScroll(int dy);bool notesSerial(const String &s);String *notesField();bool notesTyping();void notesAppend(const std::string &utf8);bool notesDictated(const String &text);bool notesPinned();const char *notesHomeText();bool notesWantPinned();// notes_app.inc
 constexpr int NotesDictation=1000;// dictationChat while dictating into the Notes editor (never a chat slot)
+void quickmsgOpen(int id);void quickmsgLeft(int next);void quickmsgCompose(mm::State &v);bool quickmsgBack();bool quickmsgKey(char c);bool quickmsgTap(int x,int y);bool quickmsgScroll(int dy);void quickmsgLoop();bool quickmsgSerial(const String &s);void quickPickerOpen();// quickmsg_app.inc: Settings > Quick messages (61) and the picker over the chat
+bool quickPickShown();String *quickmsgField();bool quickmsgShortcut(char ch);// quickmsg_app.inc: the picker is over the chat / the Settings editor field / the Quick key
+void deliveryOpen(int id);void deliveryLeft(int next);void deliveryCompose(mm::State &v);bool deliveryBack();bool deliveryKey(char c);bool deliveryTap(int x,int y);bool deliveryScroll(int dy);void deliveryLoop();bool deliverySerial(const String &s);// delivery_app.inc: message Delivery history (62)
+void deliveryShow(uint32_t token);void deliveryQueued(uint32_t token);void deliveryRecord(uint32_t token,matter::delivery::Kind kind,const String &arg);void deliveryNote(const matter::Delivery &d);// delivery_app.inc: open a message's history, record its events (queued here, the rest from deliveredRadio)
+void schedOpen(int id);void schedLeft(int next);void schedCompose(mm::State &v);bool schedBack();bool schedKey(char c);bool schedTap(int x,int y);bool schedScroll(int dy);void schedLoop();bool schedSerial(const String &s);void scheduleComposerOpen();// scheduled_app.inc: Scheduled app (63) and Send later from the composer
+bool schedTyping();String *schedField();void schedAppend(const std::string &utf8);// scheduled_app.inc: the Send later form's text field takes keys, accents and dictation
 bool radioPowerEditing=false,radioDevicePage=false;int radioDeviceFocus=0;constexpr int CompanionNameField=matter::RadioFieldCount;String radioPowerInput;
 matter::Config radioDraft;bool radioDraftLoaded=false;int radioEditField=matter::TxPower,radioPresetSelection=-1,radioBandSelection=868;
 bool advertGps=false;// off by default: on, every advert tells the mesh where this T-Deck is
@@ -343,6 +349,7 @@ void messageAction(int action){
  else if(action==2){messageActions=false;messagePath=true;messageBodyView=messageRouteView=false;messagePathOffset=0;}
  else if(action==mm::MessageMapAction&&!contextMessage.mine){messageActions=messageBodyView=false;messagePath=messageRouteView=true;routeOpen(contextMessage.path,contextMessage.sender);}
  else if(action==5&&!contextMessage.mine){messageActions=messageRouteView=false;messagePath=true;messageBodyView=true;messagePathOffset=0;}
+ else if(action==5&&contextMessage.mine){messageActions=false;deliveryShow(contextMessage.token);return;}
  else messageActions=messagePath=false;
  render();
 }
@@ -429,7 +436,8 @@ void clearActiveChat(){
 /* Chat options > Open chats at (all chats, NVS mmui/openat): the latest message, or the first one not read yet */
 static int openAtCache=-1;/* -1 not read yet from NVS */
 bool chatOpenUnread(){if(openAtCache<0)openAtCache=device::prefGetInt("mmui","openat",0)?1:0;return openAtCache==1;}
-void chatOption(int index){chatMenuFocus=index;
+void chatOption(int slot){int index=mm::chatOptionId(slot,chats[activeChat].direct);chatMenuFocus=slot;
+ if(index==mm::ChatOptionQuick){chatDetails=false;quickPickerOpen();return;}if(index==mm::ChatOptionLater){chatDetails=false;scheduleComposerOpen();return;}
  if(index==3){const bool on=!chatOpenUnread();device::prefPutInt("mmui","openat",on?1:0);openAtCache=on?1:0;notice=on?"Chats open at the first unread":"Chats open at the latest";render();return;}if(index==4){chatDetails=false;dmPathOpen(activeChat);return;}if(index==0)openScopePicker();else{chatDetails=false;clearChatConfirm=index==1;positionShare=index==2;notice="";render();}}
 void loadChats() {
  chats[0]={"Public","*",false};// fallback when the SD catalog is missing
@@ -572,7 +580,7 @@ void incomingRadio(const matter::Received &m){
  mqttDlIncoming(m,id,r.token);
  if(!(mutedChannels&(uint32_t(1)<<id)))onIncomingMessage(device::mentionsName(m.body.c_str(),matter::snapshot().config.name.c_str()));markRadioDirty();
 }
-void deliveredRadio(const matter::Delivery &d){mqttDlDelivery(d);if(d.state.length())Serial.printf("TX_STATE token=%08lx state=%s\n",(unsigned long)d.token,d.state.c_str());if(d.txComplete&&quickReply.active&&quickReply.pending&&d.token==quickReply.txToken){quickTxReady=true;quickTxSuccess=d.txSuccess;quickTxToken=d.token;}if(!radioJournal.index.find(d.token))return;if(firstRepeater.observe(d.token,d.firstRepeater.c_str(),millis())){firstRepeaterPainted=false;}if(!(d.repeaters>=0?radioJournal.repeats(d.token,d.repeaters,d.heard):radioJournal.update(d.token,d.state)))notice="ACK received / SD save failed";markRadioDirty();}
+void deliveredRadio(const matter::Delivery &d){mqttDlDelivery(d);if(d.state.length())Serial.printf("TX_STATE token=%08lx state=%s\n",(unsigned long)d.token,d.state.c_str());if(d.txComplete&&quickReply.active&&quickReply.pending&&d.token==quickReply.txToken){quickTxReady=true;quickTxSuccess=d.txSuccess;quickTxToken=d.token;}if(!radioJournal.index.find(d.token))return;deliveryNote(d);if(firstRepeater.observe(d.token,d.firstRepeater.c_str(),millis())){firstRepeaterPainted=false;}if(d.state.isEmpty()&&d.repeaters<0){markRadioDirty();return;}if(!(d.repeaters>=0?radioJournal.repeats(d.token,d.repeaters,d.heard):radioJournal.update(d.token,d.state)))notice="ACK received / SD save failed";markRadioDirty();}
 size_t messageByteLimit(int conversation){int chat=conversation<0?activeChat:conversation;bool direct=chat>=0&&chat<chatCount&&chats[chat].direct;return radioLinkActive()?radioLinkTextLimit(direct):matter::textLimit(direct);}
 bool queueRadioMessage(String body,const String *scopeOverride,int conversation,uint32_t *queuedToken){int chat=conversation<0?activeChat:conversation;if(chat<0||chat>=chatCount){notice="Conversation unavailable";return false;}body.trim();if(!body.length()){notice="Message empty";return false;}
  if(body.length()>messageByteLimit(chat)){notice=matter::messageLimitError(messageByteLimit(chat)).c_str();return false;}
@@ -583,7 +591,7 @@ bool queueRadioMessage(String body,const String *scopeOverride,int conversation,
  matter::Record r;do r.token=esp_random();while(!r.token||radioJournal.index.find(r.token));r.chat=chat;r.mine=true;r.sender="YOU";r.body=body;r.scope=scopeOverride?*scopeOverride:chats[chat].scope;time_t now=time(nullptr);r.timestamp=now>=MM_EPOCH_MIN?now:0;r.status="Pending send";r.repeaters=chats[chat].direct?-1:0;
  if(!radioJournal.append(r)){notice="SD save failed / not sent";return false;}archivePager.appended(chat);chatRowsRevision++;
  device::restoreUnreadCounts(radioJournal.index,radioJournal.readTokens,unreadMessages,size_t(chatCount));
- String reason;bool ok=radioLinkActive()?radioLinkChatSend(chat,body,r.token,reason):matter::send(chat,peerKeys[chat],r.scope,body,r.token,reason);radioJournal.update(r.token,ok?reason:"Not sent: "+reason);
+ deliveryQueued(r.token);String reason;bool ok=radioLinkActive()?radioLinkChatSend(chat,body,r.token,reason):matter::send(chat,peerKeys[chat],r.scope,body,r.token,reason);radioJournal.update(r.token,ok?reason:"Not sent: "+reason);if(!ok)deliveryRecord(r.token,matter::delivery::Kind::Failed,reason);
  if(ok)mqttDlOutgoing(chat,r.token,body,reason);
  if(ok){if(queuedToken)*queuedToken=r.token;if(chat==activeChat)chatOffset=0;firstRepeater.sent(r.token,chat);}notice=reason;Serial.printf("RADIO_MESSAGE_QUEUED ok=%d\n",ok);return ok;
 }
@@ -736,6 +744,7 @@ v.radioRepeat=matter::repeatEnabled();
  if(!deviceLocked&&screen==Screen::Section&&(section==mm::RadioLinkSection||section==mm::RadioLinkSettingsSection||section==19))radioLinkCompose(v);if(!deviceLocked&&screen==Screen::Section&&(section==19||section==mm::WebAppSection))webCompose(v);/* Settings: the MatterMesh Web row *//* Settings: the Companion link row status */
  tracksCompose(v);// the REC pill, the Settings row, the Tracks pages
 if(!deviceLocked&&screen==Screen::Section&&section==mm::NotesSection)notesCompose(v);// the Notes app
+ quickmsgCompose(v);deliveryCompose(v);schedCompose(v);// Quick messages, Delivery history, Scheduled pages
 if(!deviceLocked&&screen==Screen::Section&&(section==mm::CellularSection||section==19))cellularCompose(v);if(!deviceLocked&&screen==Screen::Section&&section==mm::SmsSection)smsCompose(v);/* Settings: the Cellular row status */
 if(!deviceLocked&&screen==Screen::Section&&section==mm::SelfTestSection)selfTestCompose(v);
  v.homeWidget=homeWidget;v.homeWidgetFocus=homeWidgetFocus;v.homeMain=homeMain;v.homeMainFocus=homeMainFocus;v.homeWidgetsRow=homeWidgetsRow;// Settings shows the choices on its Home widgets rows
@@ -852,6 +861,7 @@ void loadLights(){
 mm::Page sectionPage(int id){
  if(id==mm::MotionSection)return mm::Page::Motion;
  if(id==mm::TracksAppSection)return mm::Page::TracksApp;if(id==mm::TracksSection)return mm::Page::TracksSettings;
+ if(id==mm::QuickMessagesSection)return mm::Page::QuickMessages;if(id==mm::DeliverySection)return mm::Page::Delivery;if(id==mm::ScheduledSection)return mm::Page::Scheduled;
  if(id==mm::CellularSection)return mm::Page::Cellular;if(id==mm::SmsSection)return mm::Page::Sms;
  if(id==mm::SelfTestSection)return mm::Page::SelfTest;
  if(id==mm::NotesSection)return mm::Page::Notes;
@@ -899,6 +909,7 @@ void openSection(int id,bool paint){
  if(section==mm::TracksAppSection||section==mm::TracksSection)tracksOpen(section);
  if(section==mm::SelfTestSection)selfTestOpen();
  if(section==mm::NotesSection)notesOpen();
+ if(section==mm::QuickMessagesSection)quickmsgOpen(section);if(section==mm::DeliverySection)deliveryOpen(section);if(section==mm::ScheduledSection)schedOpen(section);
  radioPowerEditing=false;radioDevicePage=false;radioDeviceFocus=0;if(section==2)loadRadioDraft(false);
  if(section==0){searching=false;searchQuery="";messagesMenu=false;chatsParent=screen==Screen::Launcher?Screen::Launcher:Screen::Home;screen=Screen::Chats;}
  else {sectionParent=screen==Screen::Launcher?Screen::Launcher:Screen::Home;screen=Screen::Section;}
@@ -908,7 +919,7 @@ void openSection(int id,bool paint){
 uint32_t appKeptActivity=0;// lastActivity stamped by the app keep-alive (not real input)
 bool idleCpuLoop(){if(deviceLocked)return false;bool busy=dirty||radioDirty||device::networkJobActive()||dictationChat>=0||quickReply.active||deleteHeld||touchPipeline.contactActive()||matter::busy()||device::audioBusy()||(device::powerState().lastActivity!=appKeptActivity&&uint32_t(millis()-device::powerState().lastActivity)<3000)||uint32_t(millis()-lastPhysicalPaint)<1500;uint32_t want=busy?device::NORMAL_CPU_FREQUENCY:80;if(getCpuFrequencyMhz()!=want)setCpuFrequencyMhz(want);return !busy;}
 // A panel over the chat (options, position, details, scopes, clear, message actions/path, emoji picker).
-static bool chatOverlayOpen(){return channelOptions||positionShare||chatDetails||scopePicker||clearChatConfirm||messageActions||messagePath||emojiPicker;}
+static bool chatOverlayOpen(){return channelOptions||positionShare||chatDetails||scopePicker||clearChatConfirm||messageActions||messagePath||emojiPicker||quickPickShown();}
 // The notification card painted over the status bar while unlocked (one at a time, chat notice, message, update) and
 // opened by a tap.
 enum class TopBanner {None,Update,ChatNotice,Message,Sms};
@@ -1071,6 +1082,7 @@ void back() {
  if(screen==Screen::Section&&mm::toolsSection(section)&&toolsBack())return;
  if(screen==Screen::Section&&section==mm::SelfTestSection&&selfTestBack())return;
  if(tracksBack())return;
+ if(quickmsgBack()||deliveryBack()||schedBack())return;
  if(screen==Screen::Section&&section==mm::SmsSection&&smsBack())return;
  if(notesBack())return;
  if(dmPathBack())return;
@@ -1125,6 +1137,7 @@ String *editableField(){
  if(auto field=dmPathField())return field;
  if(deviceLocked||channelOptions)return nullptr;
  if(screen==Screen::Welcome)return welcomeStep==4?&welcomeName:nullptr;
+if(screen==Screen::Chat&&quickPickShown())return nullptr;// the quick message picker takes the keys
  if(screen==Screen::Chat){if(scopeEditing)return &scopeInput;if(scopePicker||clearChatConfirm||positionShare||messageActions||messagePath||chatDetails||emojiPicker||dictationChat>=0)return nullptr;return &input;}
  if(screen==Screen::Chats&&searching)return &searchQuery;
  if(screen==Screen::Section&&section==mm::NoteSection)return &noteInput;
@@ -1134,6 +1147,8 @@ String *editableField(){
  if(screen==Screen::Section&&section==14&&bleNameEditing)return &bleNameInput;
  if(screen==Screen::Section&&(section==mm::RadioLinkSection||section==mm::RadioLinkSettingsSection))return radioLinkField();
  if(screen==Screen::Section&&section==mm::CellularSection)return cellularField();
+if(screen==Screen::Section&&section==mm::QuickMessagesSection)return quickmsgField();
+ if(screen==Screen::Section&&section==mm::ScheduledSection)return schedField();
  if(screen==Screen::Section&&section==mm::SmsSection)return smsField();
  if(screen==Screen::Section&&section==mm::NotesSection)return notesField();
  if(screen==Screen::NewChat){if(formField==1)return newForm==int(mm::ChannelForm::JoinPrivate)?&newKey:nullptr;return formField==0?&newName:&newScope;}
@@ -1143,6 +1158,9 @@ String *editableField(){
 #include "motion_app.inc"
 #include "map_app.inc"
 #include "tracks_app.inc"
+#include "quickmsg_app.inc"
+#include "delivery_app.inc"
+#include "scheduled_app.inc"
 #include "radio_link_app.inc"
 #include "cellular_app.inc"
 #include "mqtt_downlink_app.inc"
@@ -1187,6 +1205,7 @@ void appVisibilityLoop(){
   if(previous==9)mapClose();else if(previous==4)wifiPageLeft();else if(previous==14){bleNameEditing=false;bleNameInput="";}else if(mm::toolsSection(previous))toolsClose(previous);
   if(previous==mm::TracksAppSection)tracksLeft(now);
   if(previous==mm::NotesSection)notesLeft();
+  if(previous==mm::QuickMessagesSection)quickmsgLeft(now);if(previous==mm::DeliverySection)deliveryLeft(now);if(previous==mm::ScheduledSection)schedLeft(now);
   }
  int scene=deviceLocked?-1:int(screen);
  if(scene!=visibleScene){int previous=visibleScene;visibleScene=scene;
@@ -1306,6 +1325,7 @@ void key(char c) {
  if(dmPathKeyPress(c))return;
  if(c!='\b'&&webKey(c))return;
  if(c!='\b'&&tracksKey(c))return;
+ if(c!='\b'&&(quickmsgKey(c)||deliveryKey(c)||schedKey(c)))return;
  if(c!='\b'&&cellularKey(c))return;
  if(c!='\b'&&smsKey(c))return;
  if(c!='\b'&&notesKey(c))return;
@@ -1320,7 +1340,7 @@ void key(char c) {
  if(screen==Screen::Chat&&scopePicker){if(c=='w'||c=='k'||c=='s'||c=='j'){scopeFocus=constrain(scopeFocus+((c=='s'||c=='j')?1:-1),0,int(regionScopes.size())-1);notice="";render();}else if(c=='\n'||c=='d')applySelectedScope();else if(c=='n')openScopePicker(true);else if(c=='a')back();return;}
  if(screen==Screen::Chat&&clearChatConfirm){if(c=='\n')clearActiveChat();else if(c=='a')back();return;}
  if(screen==Screen::Chat&&chatDetails){if(c=='w'||c=='k'||c=='s'||c=='j'){chatMenuFocus=constrain(chatMenuFocus+((c=='s'||c=='j')?1:-1),0,mm::chatOptionCount(chats[activeChat].direct)-1);render();}else if(c=='\n'||c=='d')chatOption(chatMenuFocus);else if(c=='a')back();return;}
- if(screen==Screen::Chat&&messageActions){if(contextMessage.mine&&(c=='j'||c=='k')){int count=repeaterRows(contextSnapshot()).size();heardOffset=constrain(heardOffset+(c=='j'?1:-1),0,max(0,count-mm::HeardRows));render();}else if(c=='m'&&!contextMessage.mine)messageAction(mm::MessageMapAction);else if(c>='1'&&c<=(contextMessage.mine?'5':'0'+mm::ReceivedMessageActions))messageAction(contextMessage.mine?c-'1':mm::receivedMessageAction(c-'1'));return;}
+ if(screen==Screen::Chat&&messageActions){if(contextMessage.mine&&(c=='j'||c=='k')){int count=repeaterRows(contextSnapshot()).size();heardOffset=constrain(heardOffset+(c=='j'?1:-1),0,max(0,count-mm::HeardRows));render();}else if(c=='m'&&!contextMessage.mine)messageAction(mm::MessageMapAction);else if(c>='1'&&c<=(contextMessage.mine?'6':'0'+mm::ReceivedMessageActions))messageAction(contextMessage.mine?c-'1':mm::receivedMessageAction(c-'1'));return;}
  if(screen==Screen::Chat&&messagePath){if(messageRouteView)return;if(c=='j')scrollMessagePath(5);else if(c=='k')scrollMessagePath(-5);render();return;}
  if(screen==Screen::Chat&&dictationChat>=0&&c=='\n'){notice=device::audioState().recording?"Release MIC to finish":"Wait for dictation";render();return;}
  if(screen==Screen::Home){
@@ -1537,6 +1557,7 @@ void tap(int x,int y) {
   if(webTap(x,y))return;
  if(tracksTap(x,y))return;
  if(notesTap(x,y))return;
+ if(quickmsgTap(x,y)||deliveryTap(x,y)||schedTap(x,y))return;
   if(dmPathTap(x,y))return;
   if(section==mm::QuickSettingsSection&&shutdownConfirm){quickSettingsTap(x,y);return;}
   if(section==9){mapTap(x,y);return;}// full-page map: its own floating back button
@@ -1630,6 +1651,7 @@ void tap(int x,int y) {
   else if(mm::SaveButton.contains(x,y))saveNewChannel();
   else if(mm::CancelButton.contains(x,y))back();
  }else if(screen==Screen::Chat){
+  if(quickPickShown()){quickmsgTap(x,y);return;}
   if(emojiPicker){for(int t=0;t<mm::EmojiTabs;t++)if(mm::emojiTabRect(t).contains(x,y)){emojiTab=t;emojiFocus=0;render();return;}int count=emojiItems().size();for(int i=0;i<count&&i<mm::EmojiPageSize;i++)if(mm::emojiChoiceRect(i).contains(x,y)){insertEmoji(i);return;}if(!mm::EmojiPopup.contains(x,y)){emojiPicker=false;render();}return;}
   if(holdMenu){auto labels=holdMenuLabels();std::string hit;for(int i=0;i<int(labels.size());i++)if(mm::holdMenuButton(i,labels.size(),holdMenuY).contains(x,y))hit=labels[i];if(hit.size())holdMenuPress(hit);else holdMenu=0;render();return;}// a tap anywhere else only closes it
   if(scopePicker||clearChatConfirm||chatDetails||positionShare){
@@ -1641,7 +1663,7 @@ void tap(int x,int y) {
    for(int i=0;i<mm::chatOptionCount(chats[activeChat].direct);i++)if(mm::chatOptionRect(i).contains(x,y)){chatOption(i);return;}chatDetails=false;render();return;
   }
   if(!messageActions&&!messagePath&&mm::ComposerEmoji.contains(x,y)){openEmojiPicker();render();return;}
-  if(messageActions){if(mm::BackButton.contains(x,y)){back();return;}if(contextMessage.mine){for(int i=0;i<5;i++)if(mm::ownMessageActionRect(i).contains(x,y)){messageAction(i);return;}if(mm::HeardList.contains(x,y))return;}else if(mm::messageMapRect().contains(x,y)){messageAction(mm::MessageMapAction);return;}else for(int i=0;i<mm::ReceivedMessageActions;i++)if(mm::messageActionRect(i).contains(x,y)){messageAction(mm::receivedMessageAction(i));return;}messageActions=false;render();return;}
+  if(messageActions){if(mm::BackButton.contains(x,y)){back();return;}if(contextMessage.mine){for(int i=0;i<6;i++)if(mm::ownMessageActionRect(i).contains(x,y)){messageAction(i);return;}if(mm::HeardList.contains(x,y))return;}else if(mm::messageMapRect().contains(x,y)){messageAction(mm::MessageMapAction);return;}else for(int i=0;i<mm::ReceivedMessageActions;i++)if(mm::messageActionRect(i).contains(x,y)){messageAction(mm::receivedMessageAction(i));return;}messageActions=false;render();return;}
   if(messagePath&&messageRouteView){if(mm::BackButton.contains(x,y))back();return;} // static picture: Back only
   if(messagePath){if(mm::BackButton.contains(x,y)){back();return;}if(y>=mm::Bottom-40){if(x<mm::Margin+70)scrollMessagePath(-5);else if(x<mm::Margin+134)scrollMessagePath(5);else messagePath=false;render();}return;}
   if(mm::BackButton.contains(x,y)){back();return;}
@@ -1657,6 +1679,7 @@ void swipe(int dy) {if(deviceLocked||screen==Screen::Welcome||radioLinkAsking())
  device::activity();
  if(channelOptions||positionShare)return;
  if(screen==Screen::Launcher){launcherSelection=mm::launcherSwipe(launcherSelection,mm::ApplicationCount,mm::AppsPerPage,dy<0);render();return;}// swipe up: next page of apps; a page change repaints once like the Settings pages
+ if(quickPickShown())return;
  if(screen==Screen::Section&&section==mm::BesideClockSection){stepHomeWidget(dy<0?1:-1);return;}// swipe up: next widget
  if(screen==Screen::Section&&section==mm::MainAreaSection){stepHomeMain(dy<0?1:-1);return;}
  if(screen==Screen::Home&&homeMain!=mm::MainChats)return;// the chat cards scroll only while they show
@@ -1670,6 +1693,7 @@ void swipe(int dy) {if(deviceLocked||screen==Screen::Welcome||radioLinkAsking())
   if(section==mm::DmPathSection){dmPathScroll(dy<0?mm::DmPathRows:-mm::DmPathRows);return;}
   if(tracksScroll(dy))return;
   if(notesScroll(dy))return;
+  if(quickmsgScroll(dy)||deliveryScroll(dy)||schedScroll(dy))return;
   if(mm::toolsSection(section)){toolsScroll(dy);return;}
   if(section==mm::SelfTestSection){selfTestScroll(dy);return;}
   if(section==mm::KeyboardSection){int count=int(keyboardLanguageRows().size());kbdFocus=constrain(kbdFocus+(dy<0?mm::KeyboardRows:-mm::KeyboardRows),0,max(0,count-1));render();return;}
@@ -1708,9 +1732,10 @@ void loadAccentMode(){accentMode=constrain(device::prefGetInt("mmui","accent",2)
 bool setAccentMode(int mode){if(mode<0||mode>2)return false;if(!device::prefPutInt("mmui","accent",mode))return false;accentMode=mode;accentTaps=0;accentTyped=false;return true;}
 void accentKey(bool pressed){if(pressed){if(deviceLocked)quickReplyInputAt=millis();accentTaps=accentTaps>=4?0:accentTaps+1;accentTyped=false;}else if(accentTyped){accentTaps=0;accentTyped=false;}if(deviceLocked)lockScreenDirty=true;else repaintSettled();}
 // Language letters go to the message composer and the lock-screen quick reply; menus keep the plain keys.
-static bool typingMessage(){return smsTyping()||notesTyping()||(deviceLocked?quickReply.active:!deviceLocked&&screen==Screen::Chat&&!emojiPicker&&editableField()==&input);}
+static bool typingMessage(){return smsTyping()||notesTyping()||schedTyping()||(deviceLocked?quickReply.active:!deviceLocked&&screen==Screen::Chat&&!emojiPicker&&editableField()==&input);}
 static void typeText(const std::string &text){
  device::activity();
+ if(schedTyping()){schedAppend(text);return;}
  if(smsTyping()){smsAppend(text);repaintSettled();return;}
  if(notesTyping()){notesAppend(text);return;}
  if(deviceLocked){quickReply.appendText(text);quickReplyInputAt=millis();lockScreenDirty=true;return;}
@@ -1803,6 +1828,7 @@ void keyboardEvent(int event,uint32_t capturedAt=0,bool hardwareDebounced=false)
  if(code==device::MICROPHONE_KEYCODE){if(pressed){if(keyboardModifiers.symbols()){emitKeyboardChar('0');return;}micInput(device::MicSource::Keyboard,true);}else if(dictationHold.source==device::MicSource::Keyboard)micInput(device::MicSource::Keyboard,false);return;}
  keyboardEvents++;if(code==accentCode()&&(!pressed||accentContext()))accentKey(pressed);if(keyboardModifiers.update(code,pressed)){if(!accentContext())keyboardModifiers.symLatch=false;/* sym tapped once: only in the chat composer */repaintSettled();return;}int r=k/10,c=9-k%10;char ch=keys[r][c];
  if(screen==Screen::Chat&&pressed&&keyboardModifiers.alt&&(keyboardModifiers.leftShift||keyboardModifiers.rightShift)&&editableField()==&input&&(ch=='w'||ch=='s')){accentTaps=0;if(accentHeld())accentTyped=true;/* the accent Shift used for scrolling arms nothing */scrollChat(ch=='w'?1:-1);return;}
+if(pressed&&quickmsgShortcut(ch))return;// Quick key (Settings > Quick messages): Alt + Q / Y / U on an empty composer opens the picker
  if(screen==Screen::Section&&section==4&&wifiEditing&&pressed&&keyboardModifiers.alt&&ch=='v'){wifiShowPassword=!wifiShowPassword;render();return;}
  if(screen==Screen::Section&&section==mm::CliSection&&pressed&&keyboardModifiers.alt&&cliAltKey(ch))return;
  if(ch=='\b'){
@@ -1846,7 +1872,7 @@ int channelAtPoint(int x,int y){if(deviceLocked||channelOptions)return -1;for(au
 static bool chatHoldable(){return screen==Screen::Chat&&!deviceLocked&&editableField()==&input&&!holdMenu&&!messageActions&&!messagePath&&!chatDetails&&!emojiPicker;}
 void longPressChannel(int x,int y){int id=channelAtPoint(x,y);if(id>=0){device::activity();openChannelOptions(id);}}
 static uint32_t fnv1a(const String &text){uint32_t hash=2166136261u;for(unsigned i=0;i<text.length();i++){hash^=uint8_t(text[i]);hash*=16777619u;}return hash;}
-uint32_t touchScene(){uint32_t hash=2166136261u;auto add=[&](uint32_t value){hash=(hash^value)*16777619u;};add(int(topBanner()));/* a touch started before a card appeared or went is dropped */add(int(screen));add(radioLinkAsking());add(section);add(activeChat);if(screen==Screen::Chat&&!deviceLocked)add(chatRowsRevision);add(channelOptions);add(channelKeyView);add(deleteChannelConfirm);add(positionShare);add(chatDetails);add(scopePicker);add(scopeEditing);add(clearChatConfirm);add(messageActions);add(holdMenu);add(messagePath);add(messageBodyView);add(emojiPicker);add(searching);add(messagesMenu);add(contactMenu);add(contactDialog);add(contactSearching);add(discoverFilter);add(antennaConfirm);add(shutdownConfirm);add(radioPowerEditing);add(radioDevicePage);add(wifiEditing);add(chatOffset);add(nodeScroll);add(settingsScroll);add(filesScroll);add(wifiOffset);if(screen==Screen::Chats)add(selected);if(screen==Screen::Welcome){add(welcomeStep);add(welcomeWifiChoice);add(welcomeBand);add(welcomeBytes);add(welcomeFocus);}add(deviceLocked);add(quickReply.active);add(quickReply.pending);add(quickReply.sent);return hash;}
+uint32_t touchScene(){uint32_t hash=2166136261u;auto add=[&](uint32_t value){hash=(hash^value)*16777619u;};add(int(topBanner()));/* a touch started before a card appeared or went is dropped */add(int(screen));add(radioLinkAsking());add(section);add(activeChat);if(screen==Screen::Chat&&!deviceLocked)add(chatRowsRevision);add(channelOptions);add(channelKeyView);add(deleteChannelConfirm);add(positionShare);add(chatDetails);add(scopePicker);add(scopeEditing);add(clearChatConfirm);add(messageActions);add(holdMenu);add(messagePath);add(messageBodyView);add(emojiPicker);add(searching);add(messagesMenu);add(contactMenu);add(contactDialog);add(contactSearching);add(discoverFilter);add(antennaConfirm);add(shutdownConfirm);add(radioPowerEditing);add(radioDevicePage);add(wifiEditing);add(chatOffset);add(nodeScroll);add(settingsScroll);add(filesScroll);add(wifiOffset);if(screen==Screen::Chats)add(selected);if(screen==Screen::Welcome){add(welcomeStep);add(welcomeWifiChoice);add(welcomeBand);add(welcomeBytes);add(welcomeFocus);}add(deviceLocked);add(quickReply.active);add(quickReply.pending);add(quickReply.sent);add(quickPickShown());return hash;}
 struct UiReplay {int kind=0,step=0;uint32_t started=0;bool released=false;};UiReplay uiReplay;uint32_t injectedTouchUntil=0;int injectedTouchX=0,injectedTouchY=0;
 void feedTouch(bool down,int x,int y,uint32_t now){
  bool allowed=!(panelPainting&&touchTransition);int target=-1;std::string key;
@@ -2077,6 +2103,7 @@ void handle(const String &s) {
  if(webSerial(s))return;
  if(tracksSerial(s))return;
  if(notesSerial(s))return;
+ if(quickmsgSerial(s)||deliverySerial(s)||schedSerial(s))return;
  if(s=="channel menu status"){auto gps=device::locationState();bool valid=!device::gpsCoordinateMessage(gps.available,gps.enabled,gps.fix,gps.fixAgeMs,gps.latitude,gps.longitude).empty();Serial.printf("CHANNEL_MENU_STATUS key_view=%d qr_size=%d key_chars=%u count=%d open=%d target=%d muted=%d delete_confirm=%d position=%d position_ready=%d\n",channelKeyView,channelQrSize,channelKeyHex.length(),chatCount,channelOptions,channelOptionTarget,channelOptionTarget>=0&&channelOptionTarget<chatCount&&bool(mutedChannels&(uint32_t(1)<<channelOptionTarget)),deleteChannelConfirm,positionShare,valid);return;}
  if(s=="channel list"){DynamicJsonDocument json(8192);// 32 conversations
  auto list=json.to<JsonArray>();for(int i=0;i<chatCount;i++){auto entry=list.createNestedObject();entry["id"]=i;entry["name"]=chats[i].name;entry["direct"]=chats[i].direct;entry["muted"]=bool(mutedChannels&(uint32_t(1)<<i));entry["ready"]=channelReady[i];entry["peer_bound"]=!peerKeys[i].isEmpty();}Serial.print("CHANNEL_LIST ");serializeJson(json,Serial);Serial.println();return;}
@@ -2288,6 +2315,7 @@ void loop(){
   handle(command);command="";if(request)Serial.printf("USB_DONE %lu\n",request);
  }else if(c!='\r'&&command.length()<256)command+=c;}
  matter::loop();hapticLoop();device::audioLoop();webLoop();device::tracksLoop();tracksUiLoop();
+ quickmsgLoop();deliveryLoop();schedLoop();
  device::modemLoop();smsLoop();cellularTick();{static uint32_t idAt=0;if(!idAt||uint32_t(millis()-idAt)>=5000){idAt=millis()|1;device::mqttSetIdentity(matter::snapshot().config.name.c_str(),matter::ownKey().c_str());}}
  mqttDlLoop();
  selfTestTick();

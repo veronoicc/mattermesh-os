@@ -37,6 +37,10 @@ public:
  void cellularPage(const State &s);// Settings > Cellular (51)
  void smsPage(const State &s);// SMS app (52)
  void notesPage(const State &s);// Notes app (56)
+ void quickPage(const State &s);// Settings > Quick messages (61), quickmsg_renderer.inc; quickPicker(s) draws the picker over the chat
+ void quickPicker(const State &s);
+ void deliveryPage(const State &s);// message Delivery history (62), delivery_renderer.inc
+ void scheduledPage(const State &s);// Scheduled app (63), scheduled_renderer.inc
  void radioLinkAsk();// over any page: download the companion's messages?
  void cliApp(const State &s);
  void rxLogApp(const State &s);// RX Log (rx_log_renderer.inc)

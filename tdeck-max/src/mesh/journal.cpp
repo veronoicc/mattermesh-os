@@ -1,4 +1,5 @@
 #include "journal.h"
+#include "delivery_log.h"
 #include "../services/tsv_field.h"
 #include <algorithm>
 #include <cstring>
@@ -19,6 +20,8 @@ static bool decode(const String &row,Record &r){
 }
 static void rebootStatus(Record &r){if(r.status.startsWith("Queued")||(r.mine&&r.status=="Pending send"))r.status=r.mine?"Not confirmed / reboot":"Received";}
 static bool carriesHeard(const String &row){return field(row,3).length()||field(row,2).toInt()==0;}
+// E1 row: token, timeline text. A row cut inside the token has no second tab, one cut inside the text lacks the closing `;`.
+static bool timelineRow(const String &row){return row.startsWith("E1\t")&&row.indexOf('\t',3)>0&&row[row.length()-1]==';';}
 static void echo(Record &r,const String &row){r.repeaters=field(row,2).toInt();if(carriesHeard(row))r.heard=field(row,3);}
 static void cache(std::vector<Record> &records,const Record &r){if(records.size()>=JOURNAL_CACHE_RECORDS)records.erase(records.begin());records.push_back(r);}
 // Boot replay reads the journal in 2 KB blocks: readStringUntil() pulled it one byte per call (half a MB on a 4 MHz SD).
@@ -59,10 +62,11 @@ void Journal::begin(fs::FS &storage,const char *path){dirReady=false;
    int c=field(row,1).toInt();if(c>=0&&c<CHAT_SLOTS){readTrackedChats|=uint32_t(1)<<c;readTokens[c]=strtoul(field(row,2).c_str(),nullptr,16);}
   }else if(row.startsWith("I1\t")&&field(row,3)=="READ_ONE"){
    int c=field(row,1).toInt();auto e=index.find(strtoul(field(row,2).c_str(),nullptr,16));if(e&&e->chat==c&&!e->mine){e->readLocally=true;for(auto &v:records)if(v.token==e->token)v.readLocally=true;}
-  }else if(row.startsWith("C1\t")||row.startsWith("S1\t")){
+  }else if(row.startsWith("C1\t")||row.startsWith("S1\t")||row.startsWith("E1\t")){
+   const char kind=row[0];if(kind=='E'&&!timelineRow(row))continue;
    auto e=index.find(strtoul(field(row,1).c_str(),nullptr,16));if(!e)continue;
-   if(row.startsWith("C1\t")){e->echoPosition=position;if(carriesHeard(row))e->heardPosition=position;}else e->statusPosition=position;
-   auto apply=[&](Record &v){if(row.startsWith("C1\t"))echo(v,row);else v.status=field(row,2);};
+   if(kind=='C'){e->echoPosition=position;if(carriesHeard(row))e->heardPosition=position;}else if(kind=='S')e->statusPosition=position;else e->timelinePosition=position;
+   auto apply=[&](Record &v){if(kind=='C')echo(v,row);else if(kind=='S')v.status=field(row,2);else v.timeline=field(row,2);};
    for(auto &v:records)if(v.token==e->token)apply(v);if(summaries[e->chat].last.token==e->token)apply(summaries[e->chat].last);
   }
  }
@@ -77,6 +81,7 @@ bool Journal::readRecordFrom(File &f,uint32_t token,Record &r){
  auto e=index.find(token);if(!healthy||!f||!e||!f.seek(e->position))return false;
  bool ok=decode(f.readStringUntil('\n'),r)&&r.token==token&&r.chat==e->chat;
  if(ok&&e->statusPosition){ok=f.seek(e->statusPosition);if(ok){auto row=f.readStringUntil('\n');ok=row.startsWith("S1\t")&&strtoul(field(row,1).c_str(),nullptr,16)==token;if(ok)r.status=field(row,2);}}
+ if(ok&&e->timelinePosition&&f.seek(e->timelinePosition)){auto row=f.readStringUntil('\n');if(timelineRow(row)&&strtoul(field(row,1).c_str(),nullptr,16)==token)r.timeline=field(row,2);}
  auto echoRow=[&](uint32_t at,String &row){if(!f.seek(at))return false;row=f.readStringUntil('\n');return row.startsWith("C1\t")&&strtoul(field(row,1).c_str(),nullptr,16)==token;};
  if(ok&&e->heardPosition&&e->heardPosition!=e->echoPosition){String row;ok=echoRow(e->heardPosition,row);if(ok)echo(r,row);}
  if(ok&&e->echoPosition){String row;ok=echoRow(e->echoPosition,row);if(ok)echo(r,row);}
@@ -106,6 +111,11 @@ bool Journal::repeats(uint32_t token,int count,const String &heard){
  auto e=index.find(token);if(!healthy||!fs||!e||count<0)return false;
  String row="C1\t"+String(token,HEX)+"\t"+String(count)+"\t"+safe(heard)+"\n";uint32_t position=0;bool ok=appendRow(row,&position);
  if(ok){e->echoPosition=position;if(heard.length()||count==0)e->heardPosition=position;auto apply=[&](Record &r){r.repeaters=count;r.heard=heard;};for(auto &r:records)if(r.token==token)apply(r);auto &s=summaries[e->chat];if(s.last.token==token)apply(s.last);s.revision++;}return ok;
+}
+bool Journal::timeline(uint32_t token,const String &encoded){
+ auto e=index.find(token);if(!healthy||!fs||!e||!encoded.length()||encoded.length()>delivery::MaxEncoded||encoded[encoded.length()-1]!=';')return false;
+ String row="E1\t"+String(token,HEX)+"\t"+safe(encoded)+"\n";uint32_t position=0;bool ok=appendRow(row,&position);
+ if(ok){e->timelinePosition=position;for(auto &r:records)if(r.token==token)r.timeline=encoded;auto &s=summaries[e->chat];if(s.last.token==token)s.last.timeline=encoded;s.revision++;}return ok;
 }
 // The 0 keeps the D1 row format; it was the clear boundary of the pre-journal local-messages.tsv.
 bool Journal::clearChat(int chat){

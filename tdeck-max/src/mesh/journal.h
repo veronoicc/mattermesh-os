@@ -7,7 +7,7 @@
 namespace matter {
 // Newest records kept in RAM; older history is read from SD on demand.
 constexpr size_t JOURNAL_CACHE_RECORDS=16;
-struct Record {uint32_t token=0,timestamp=0;int chat=0,hops=-1;bool mine=false,readLocally=false;String sender,body,scope,status,path,heard;int repeaters=-1;};
+struct Record {uint32_t token=0,timestamp=0;int chat=0,hops=-1;bool mine=false,readLocally=false;String sender,body,scope,status,path,heard,timeline;int repeaters=-1;};// timeline: delivery_log.h text form, empty for rows written before timelines
 class Journal {
  fs::FS *fs=nullptr;
  String journalPath="/mattermesh/messages.tsv";
@@ -24,6 +24,8 @@ public:
  bool append(const Record &record);
  bool update(uint32_t token,const String &status);
  bool repeats(uint32_t token,int count,const String &heard="");
+ // Latest delivery timeline of a sent message (E1 row, delivery_log.h text form); false for an unknown token or text.
+ bool timeline(uint32_t token,const String &encoded);
  bool clearChat(int chat);
  bool markRead(int chat,uint32_t token);
  bool markOneRead(int chat,uint32_t token);

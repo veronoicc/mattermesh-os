@@ -56,3 +56,20 @@ for model in "${models[@]}"; do
 done
 # Exporter numerics (bit packing, quantization, BatchNorm folding); needs the project venv of tools/offline_asr.
 if [ -x tools/offline_asr/.venv/bin/python ]; then (cd tools/offline_asr && .venv/bin/python test_export.py); else echo "SKIP export_nemo self-check: no tools/offline_asr/.venv"; fi
+# Quick messages: pure presets / NVS blob / position compose, and the Settings page + chat picker layout.
+g++ -std=c++17 -O2 -Isrc sim/test_quick_messages.cpp -o artifacts/release-tests/quick_messages
+artifacts/release-tests/quick_messages
+g++ "${ui_flags[@]}" sim/test_quick_messages_ui.cpp artifacts/release-tests/components.o artifacts/release-tests/artwork.o artifacts/release-tests/renderer.o artifacts/release-tests/gfx.o artifacts/release-tests/qrcodegen.o -o artifacts/release-tests/quick_messages_ui
+artifacts/release-tests/quick_messages_ui
+# Scheduled messages: pure scheduler (conditions, gates, retry, persistence, date editor) and the Scheduled app layout.
+g++ -std=c++17 -O2 -Isrc sim/test_scheduler.cpp -o artifacts/release-tests/scheduler
+artifacts/release-tests/scheduler
+g++ "${ui_flags[@]}" sim/test_scheduled_ui.cpp artifacts/release-tests/components.o artifacts/release-tests/artwork.o artifacts/release-tests/renderer.o artifacts/release-tests/gfx.o artifacts/release-tests/qrcodegen.o -o artifacts/release-tests/scheduled_ui
+artifacts/release-tests/scheduled_ui
+# Delivery history: pure timeline model, the journal E1 rows (legacy and torn rows), and the Delivery page / own-message panel layout.
+g++ -std=c++17 -O2 -Isrc sim/test_delivery_log.cpp -o artifacts/release-tests/delivery_log
+artifacts/release-tests/delivery_log
+g++ -std=c++17 -O2 -Isim/journal-stubs -Isrc sim/test_delivery_journal.cpp src/mesh/journal.cpp -o artifacts/release-tests/delivery_journal
+artifacts/release-tests/delivery_journal
+g++ "${ui_flags[@]}" sim/test_delivery_ui.cpp artifacts/release-tests/components.o artifacts/release-tests/artwork.o artifacts/release-tests/renderer.o artifacts/release-tests/gfx.o artifacts/release-tests/qrcodegen.o -o artifacts/release-tests/delivery_ui
+artifacts/release-tests/delivery_ui

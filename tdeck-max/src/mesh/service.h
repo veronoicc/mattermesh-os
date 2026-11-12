@@ -6,6 +6,7 @@
 #include "message_limits.h"
 #include "rx_log.h"
 #include "rpt_wire.h"
+#include "delivery_log.h"
 #include <FS.h>
 #include <ExtensionIOXL9555.hpp>
 #include <vector>
@@ -14,7 +15,7 @@ struct Config { float frequency=869.618f,bandwidth=62.5f;uint8_t sf=8,cr=8,pathB
 struct Node {String key,name;uint8_t type=0;uint32_t seen=0,advertAt=0;int hops=-1;float rssi=0,snr=0;bool live=false;int32_t lat=0,lon=0;};
 struct NodePin {double lat=0,lon=0;bool repeater=false,live=false;char name[16]={};};
 struct Received {int channelId=-1;String key,channel,sender,body,scope,path;uint32_t timestamp=0;int hops=-1;bool direct=false;};
-struct Delivery {bool txComplete=false,txSuccess=false;uint32_t token=0;String state,heard,firstRepeater;int repeaters=-1;};
+struct Delivery {bool txComplete=false,txSuccess=false;uint32_t token=0;String state,heard,firstRepeater;int repeaters=-1;bool hasEvent=false;delivery::Kind event=delivery::Kind::Queued;String eventArg;/* hasEvent: one timeline event (delivery_log.h) happened to this message; repeaters heard come in heard */};
 struct Snapshot {bool ready=false,identity=false,internal=true,rx=false,tx=false,suspended=false;/* suspended: asleep for the companion link */int error=0,nodes=0,queued=0;uint32_t received=0,sent=0,errors=0;float rssi=0,snr=0;Config config;};
 using Receiver=void(*)(const Received&);using Delivered=void(*)(const Delivery&);
 bool begin(fs::FS &fs,ExtensionIOXL9555 &io,bool ioReady,Receiver receiver,Delivered delivered);
@@ -62,6 +63,8 @@ size_t textLimit(bool direct);
 bool advertise(String &reason,bool position=false,double lat=0,double lon=0);bool busy();
 // Changes of the node cache (adverts, names, positions): the Contacts page repaints when it moves.
 uint32_t nodesRevision();
+// Scheduled messages: when (millis) a repeater / the contact with this key last advertised this boot, 0 never.
+uint32_t lastRepeaterHeardMs();uint32_t keyHeardMs(const String &key);
 
 // Companion link: the SX1262 sleeps (no RX, no TX, the mesh loop idles) while another companion carries the traffic;
 // false wakes it with the saved settings.

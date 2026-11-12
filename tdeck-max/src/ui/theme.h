@@ -164,9 +164,11 @@ constexpr int MessageMapW=64,MessageMapAction=6;
 constexpr Rect messageMapRect(){return {Margin+8+(W-2*Margin-16)-MessageMapW,Top+40+32,MessageMapW,28};}
 constexpr int receivedMessageAction(int row){return row==0?0:row==1?2:row==2?5:row==3?1:3;}
 constexpr Rect messageActionRect(int index){return {Margin+8,Top+40+index*32,W-2*Margin-16,28};}
-inline Rect chatOptionRect(int index){return {Margin+8,Top+36+index*44,W-2*Margin-16,38};}
-constexpr int ChatOptionCount=4;/* + Open chats at */// channels; a direct chat adds Path
-inline int chatOptionCount(bool direct){return direct?ChatOptionCount+1:ChatOptionCount;}
+// Chat options rows (7 at most): logical ids 0 scope, 1 clear, 2 GPS position, 3 open at, 4 Path (direct chats only), then Quick messages and Send later.
+inline Rect chatOptionRect(int index){return {Margin+8,Top+30+index*32,W-2*Margin-16,28};}
+constexpr int ChatOptionCount=4,ChatOptionQuick=5,ChatOptionLater=6;
+inline int chatOptionCount(bool direct){return (direct?ChatOptionCount+1:ChatOptionCount)+2;}
+inline int chatOptionId(int slot,bool direct){return slot<ChatOptionCount?slot:direct?slot:slot+1;}
 // Channel options rows: notifications, show key + QR (channels only), delete.
 inline Rect channelOptionRect(int slot){return {Margin+8,Top+78+slot*48,W-2*Margin-16,38};}
 constexpr Rect ChannelAction={Margin+8,Top+78,W-2*Margin-16,38};
@@ -264,7 +266,8 @@ namespace mm {
 constexpr Rect AntennaInternal={Margin,Top+22,W-2*Margin,44},AntennaExternal={Margin,Top+72,W-2*Margin,44};
 constexpr int HeardRows=3,HeardRowH=18,HeardListY=Top+94;
 constexpr Rect HeardList={Margin+8,Top+90,W-2*Margin-16,70};
-inline Rect ownMessageActionRect(int index){if(index==0)return {Margin+8,Top+36,W-2*Margin-16,30};return {index==2||index==3?124:Margin+8,Top+(index==2||index==4?168:204),100,30};}
+// RESEND and DELIVERY share the top row (halves); the others sit below the heard list.
+inline Rect ownMessageActionRect(int index){const int half=(W-2*Margin-16-Gap)/2;if(index==0)return {Margin+8,Top+36,half,30};if(index==5)return {Margin+8+half+Gap,Top+36,half,30};return {index==2||index==3?124:Margin+8,Top+(index==2||index==4?168:204),100,30};}
 // First-boot welcome (portrait): title and hint under the status bar, full-width choice cards or preset rows,
 // step dots and BACK / NEXT at the bottom.
 constexpr Rect WelcomeBack={Margin,H-38,92,30},WelcomeNext={W-Margin-112,H-38,112,30};

@@ -10,7 +10,7 @@
 namespace matter {
 // Volatile metadata only. Message bodies and updates remain in the SD journal.
 // heardPosition: latest C1 whose heard list replaces the previous one (legacy replay rule).
-struct MessageIndexEntry {uint32_t token=0,position=0,statusPosition=0,echoPosition=0,heardPosition=0;int chat=-1;bool mine=false,readLocally=false,restored=false;};
+struct MessageIndexEntry {uint32_t token=0,position=0,statusPosition=0,echoPosition=0,heardPosition=0,timelinePosition=0;int chat=-1;bool mine=false,readLocally=false,restored=false;};
 class MessageIndex {
  static constexpr size_t BlockSize=128;
  struct Block {Block *previous=nullptr,*next=nullptr;size_t used=0;MessageIndexEntry entries[BlockSize];};
