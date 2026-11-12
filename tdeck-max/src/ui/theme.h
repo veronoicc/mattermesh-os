@@ -9,9 +9,11 @@ namespace mm {
 #ifndef MM_HEIGHT
 #define MM_HEIGHT 320
 #endif
-constexpr int W=MM_WIDTH,H=MM_HEIGHT,MaxSection=55;// 47: MatterMesh Web (radio_link_layout.h); 43: chat Path (dm_path_layout.h); 48-55 below
+constexpr int W=MM_WIDTH,H=MM_HEIGHT,MaxSection=63;// 47: MatterMesh Web (radio_link_layout.h); 43: chat Path (dm_path_layout.h); 48-63 below
 // Motion / compass, Tracks (app + settings), Cellular, SMS and the field tools (RPT Scanner, RX Log, Noise Floor).
 constexpr int MotionSection=48,TracksAppSection=49,TracksSection=50,CellularSection=51,SmsSection=52,RptScannerSection=53,RxLogSection=54,NoiseFloorSection=55;
+// Notes app, Power profile, Security (lock PIN), Backup / restore, Self-test app, Quick messages, message Delivery history, Scheduled messages app.
+constexpr int NotesSection=56,PowerProfileSection=57,SecuritySection=58,BackupSection=59,SelfTestSection=60,QuickMessagesSection=61,DeliverySection=62,ScheduledSection=63;
 constexpr uint16_t BG=0,FG=1; // GFXcanvas1 ink semantics; white=0, black=1.
 constexpr int Margin=8,Gap=6,Radius=5,StatusH=18,HeaderH=32,FooterH=18;
 constexpr int Top=StatusH+HeaderH,Bottom=H-Margin,FooterY=H-FooterH;
@@ -58,10 +60,10 @@ constexpr Rect EmojiPopup={Margin,ComposerY-198,W-2*Margin,196};
 constexpr Rect emojiTabRect(int index){return {EmojiPopup.x+4+index*36,EmojiPopup.y+4,34,26};}
 constexpr Rect emojiChoiceRect(int index){return {EmojiPopup.x+4+(index%6)*36,EmojiPopup.y+34+(index/6)*36,34,34};}
 constexpr Rect ChatMenu={W-32,StatusH,32,HeaderH};
-constexpr int SettingsCount=24,SettingsRowH=36;
+constexpr int SettingsCount=28,SettingsRowH=36;
 // Six groups, each label above its first row (navigation_catalog.h SettingsItems is in this order).
 constexpr int SettingsGroupCount=6;
-inline constexpr int SettingsGroupFirst[SettingsGroupCount]={0,3,9,13,16,20};// MatterMesh Web after Cellular
+inline constexpr int SettingsGroupFirst[SettingsGroupCount]={0,3,9,13,17,23};// MatterMesh Web after Cellular
 inline constexpr const char *SettingsGroupNames[SettingsGroupCount]={"RADIO & MESH","CONNECTIONS","DISPLAY","KEYBOARD & SOUND","DEVICE","SYSTEM"};
 constexpr int SettingsGpsIndex=5;// CONNECTIONS
 // Settings scroll by whole rows: scroll = first visible row, its group label above it
