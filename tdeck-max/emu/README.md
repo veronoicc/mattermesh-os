@@ -49,7 +49,7 @@ but the firmware does not start MeshCore.
 | BQ27220 at 0x55 | 3.92 V, 82% SOC, 25°C, capacity/current/status readings; USB changes current and charge status. The UI applies its own battery percentage policy. |
 | SY6970 at 0x6A | Charger status, battery/VBUS ADC and ordinary register reads/writes. |
 | DRV2605 at 0x5A | Register storage, identity and GO/RTP control; vibration writes log `EMU_VIBRATE`. |
-| ES8311 at 0x18 | Real `esp_codec_dev`/ES8311 code over register I2C; IDF I2S shim discards playback and captures silence. |
+| ES8311 at 0x18 | Real `esp_codec_dev`/ES8311 code over register I2C; IDF I2S shim discards playback and captures a faint deterministic hiss (±40 LSB, below the dictation speech threshold) so the Self-test microphone check sees a live ADC. |
 | SX1262, CS3/BUSY6/RST4/DIO1=5 | Existing RadioLib command/IRQ/airtime/CAD/RSSI/SNR model, gated by XL9555 LoRa power. |
 | GPS MIA-M10Q on Serial2 | Existing 38400-baud NMEA/UBX model, powered by XL9555 pin2. About 6 s cold start; configurable fix coordinates. |
 | SD / NVS | Host directory / atomic Preferences file, using the existing core. |
@@ -120,6 +120,7 @@ SX1262_TEST_LOCAL_ONLY=1 emu/tests/run_sx1262_tests.sh
 
 Smoke checks physical Home screenshots, Enter → Messages, touch Back → Home, chat
 typing/cleanup, radio readiness, GPS, storage, audio playback, haptics and virtual Wi-Fi.
+`emu/tests/selftest_max.sh` runs every Self-test check (serial `selftest`) against the emulated chips, answers the keyboard and touch checks through the TCA8418 / CST328, and expects the report on the SD card; the BHI260AP check fails there by design (chip not modelled).
 Set `EMU_MAX_TEST_DIR` to an empty directory to retain smoke logs/screenshots.
 Core and SX1262 tests use ASan/UBSan. The default SX1262 suite deliberately fails
 if localhost sockets are prohibited; the explicit local-only run reports that skip.

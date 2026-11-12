@@ -15,11 +15,16 @@ esp_err_t i2s_write(i2s_port_t, const void *, size_t n, size_t *done,
     *done = n;
   return ESP_OK;
 }
+// The emulated microphone hears a faint deterministic hiss (about +-40 of 32768, below the dictation speech threshold) instead of digital silence, so capture checks can tell a live ADC from a dead one.
 esp_err_t i2s_read(i2s_port_t, void *p, size_t n, size_t *done, TickType_t) {
   if (!p && n)
     return ESP_ERR_INVALID_ARG;
-  if (n)
-    std::memset(p, 0, n);
+  static uint32_t seed = 0x2545f491u;
+  auto *s = static_cast<int16_t *>(p);
+  for (size_t i = 0; i < n / 2; i++) {
+    seed = seed * 1664525u + 1013904223u;
+    s[i] = int16_t(int(seed >> 24) % 81 - 40);
+  }
   if (done)
     *done = n;
   return ESP_OK;

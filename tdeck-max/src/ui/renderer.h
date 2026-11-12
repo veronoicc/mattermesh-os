@@ -41,6 +41,7 @@ public:
  void rxLogApp(const State &s);// RX Log (rx_log_renderer.inc)
  void noiseApp(const State &s);// Noise Floor (noise_renderer.inc)
  void rptApp(const State &s);// RPT Scanner (rpt_renderer.inc)
+ void selfTestApp(const State &s);// Self-test (selftest_renderer.inc)
  int cliLineAt(const State &s,int y); // raw CLI line under y, -1 if none
  int cliMaxScroll(const State &s);
  const std::vector<std::pair<Rect,int>> &messageBounds()const{return bubbleHits;}

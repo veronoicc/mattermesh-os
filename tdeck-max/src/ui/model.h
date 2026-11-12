@@ -8,12 +8,13 @@
 #include "services/home_data.h"
 #include "rx_log_view.h"
 #include "noise_view.h"
+#include "selftest_view.h"
 #include "rpt_view.h"
 #include "cellular_layout.h"
 #include "sms_layout.h"
 namespace mm {
 enum class WeatherPhaseView {Closed,WifiOff,Connecting,NoNetwork,WaitingClock,Locating,Fetching,Ready,Error};
-enum class Page { Home,Launcher,Messages,Chat,NewChat,Settings,Controls,Mesh,Radio,GPS,Maps,Weather,Info,Files,Wifi,Bluetooth,Terminal,DateTime,Updates,Battery,Power,Audio,Wallpaper,Antenna,Storage,QuickSettings,Cli,ContactPicker,Support,Keyboard,AccentKey,HomeWidgets,BesideClock,MainArea,Note,DmPath,RadioLink,RadioLinkSettings,WebApp,Motion,RxLog,NoiseFloor,RptScanner,TracksApp,TracksSettings,Cellular,Sms};
+enum class Page { Home,Launcher,Messages,Chat,NewChat,Settings,Controls,Mesh,Radio,GPS,Maps,Weather,Info,Files,Wifi,Bluetooth,Terminal,DateTime,Updates,Battery,Power,Audio,Wallpaper,Antenna,Storage,QuickSettings,Cli,ContactPicker,Support,Keyboard,AccentKey,HomeWidgets,BesideClock,MainArea,Note,DmPath,RadioLink,RadioLinkSettings,WebApp,Motion,RxLog,NoiseFloor,RptScanner,TracksApp,TracksSettings,Cellular,Sms,SelfTest};
 struct Conversation { std::string name,scope,preview,time="--:--",sender,age="--";bool direct=false;int id=0,unread=0,activity=0; };
 struct Message {std::string sender,time,body,meta;bool mine;std::string path,heard,scope;int hops=-1;uint32_t token=0;int repeaters=-1;Message(std::string s="",std::string t="",std::string b="",std::string m="",bool own=false):sender(std::move(s)),time(std::move(t)),body(std::move(b)),meta(std::move(m)),mine(own){} };
 struct ContactRow {std::string name,detail;};
@@ -43,6 +44,7 @@ struct State {
  std::vector<std::string> cliLines;std::string cliPrompt,cliInput;int cliCursor=0,cliScroll=0;bool cliStreaming=false,cliCanPaste=false;
  std::string firstRepeater;
  RxLogView rxl;NoiseView noise;RptView rpt;// field tools (RX Log, Noise Floor, RPT Scanner): filled by their *_app.inc compose hooks
+ SelfTestView selftest;// Self-test app: filled by selfTestCompose (selftest_app.inc)
  int vibrationPercent=75;
  bool displayLightEnabled=true,keyboardLightEnabled=true;
  bool audioTranscribing=false,offlineEngineCompiled=false;int audioSeconds=0;bool audioReady=false,audioNotifications=true,audioRecording=false,audioWarming=false;int audioVolume=20;std::string audioMessage;
