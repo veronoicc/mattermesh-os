@@ -43,5 +43,11 @@ int main(){
  int focus=0;for(auto key:{'d','d','s','a','a','w'})focus=mm::moveAppFocus(focus,key,6,3);assert(focus==0);
  assert(mm::moveAppFocus(2,'d',6,3)==2);assert(mm::moveAppFocus(5,'s',6,3)==5);assert(mm::moveAppFocus(4,'s',5,3)==4);
  for(int i=0;i<6;i++)for(char key:std::string("wasd")){int next=mm::moveAppFocus(i,key,6,3);assert(next>=0&&next<6);}
+ // Launcher pages: 3x3 per page, W/S cross pages in the same column, A/D stay in the row, a swipe keeps the tile position; every tile is reachable.
+ assert(mm::appPageCount(9,9)==1&&mm::appPageCount(12,9)==2&&mm::appPageCount(18,9)==2&&mm::appPageCount(19,9)==3&&mm::appPage(8,9)==0&&mm::appPage(9,9)==1&&mm::appPage(-1,9)==0);
+ assert(mm::moveLauncherFocus(6,'s',12,3,9)==9&&mm::moveLauncherFocus(8,'s',12,3,9)==11&&mm::moveLauncherFocus(11,'s',12,3,9)==11&&mm::moveLauncherFocus(9,'w',12,3,9)==6&&mm::moveLauncherFocus(0,'w',12,3,9)==0&&mm::moveLauncherFocus(-1,'d',12,3,9)==0);
+ assert(mm::moveLauncherFocus(2,'d',12,3,9)==2&&mm::moveLauncherFocus(9,'d',12,3,9)==10&&mm::moveLauncherFocus(11,'d',12,3,9)==11&&mm::moveLauncherFocus(10,'a',12,3,9)==9&&mm::moveLauncherFocus(9,'a',12,3,9)==9);
+ assert(mm::launcherSwipe(1,12,9,true)==10&&mm::launcherSwipe(10,12,9,true)==10&&mm::launcherSwipe(10,12,9,false)==1&&mm::launcherSwipe(1,12,9,false)==1&&mm::launcherSwipe(-1,12,9,true)==9&&mm::launcherSwipe(5,14,9,true)==13&&mm::launcherSwipe(8,11,9,true)==10);
+ {bool seen[30]={};std::vector<int> todo={0};seen[0]=true;while(!todo.empty()){int f=todo.back();todo.pop_back();for(char k:std::string("wasd")){int n=mm::moveLauncherFocus(f,k,25,3,9);if(!seen[n]){seen[n]=true;todo.push_back(n);}}}for(int i=0;i<25;i++)assert(seen[i]);}
  std::cout<<"PASS: active-only status icons/GPS including time acquisition, latest own Heard count only/full history/search, top-only unlock progress, WASD grid bounds and reachability\n";
 }

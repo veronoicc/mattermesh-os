@@ -44,7 +44,8 @@ constexpr Rect LockRepeater={Margin,LockMessageY+LockMessageH+LockRepeaterGap,W-
 // Quick Reply covers the lock screen below the date row (clock + photo), taller composer.
 constexpr Rect QuickReplyPanel={Margin,HoldBannerY+HoldBannerH,W-2*Margin,H-(HoldBannerY+HoldBannerH)-8},QuickReplyComposer={Margin+8,160,W-2*Margin-16,96};
 constexpr Rect QuickReplySend={Margin+8,278,100,28},QuickReplyCancel={124,278,100,28};
-inline Rect appRect(int index){return {6+(index%3)*(AppW+AppGap),Top+4+(index/3)*86,AppW,82};} // 3 rows fit above Bottom
+constexpr int AppsPerPage=9;// launcher tiles per page (3x3)
+inline Rect appRect(int index){index%=AppsPerPage;return {6+(index%3)*(AppW+AppGap),Top+4+(index/3)*86,AppW,82};} // the tile on its page; 3 rows fit above Bottom
 // New-channel form: 0 name, 1 secret key (two lines) or hashtag note, 2 region scope.
 inline Rect formRect(int field){return {Margin,field==0?FormNameY:field==1?FormKeyY:FormScopeY,W-2*Margin,field==1?FormKeyH:30};}
 constexpr Rect ComposerEmoji={W-Margin-32,ComposerY+2,30,30};

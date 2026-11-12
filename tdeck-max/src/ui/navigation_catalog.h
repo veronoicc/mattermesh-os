@@ -10,7 +10,7 @@ static_assert(sizeof(HomeTabs)/sizeof(HomeTabs[0])==MenuHomeTabCount,"Home catal
 // Donate QR: donations of any amount.
 constexpr const char *DonateUrl="https://ko-fi.com/mattermeshos";
 // Source builds carry every app: the OS apps, then the field tools (RPT Scanner, RX Log, Noise Floor), Tracks and SMS.
-inline constexpr AppItem Applications[]={{"Maps",PackIcon::Map,9},{"Weather",PackIcon::Weather,10},{"Files",PackIcon::Files,7},{"CLI",PackIcon::Keyboard,30},{"RPT Scanner",PackIcon::Radio,RptScannerSection},{"RX Log",PackIcon::List,RxLogSection},{"Noise Floor",PackIcon::Signal,NoiseFloorSection},{"Tracks",PackIcon::Map,TracksAppSection},{"SMS",PackIcon::Chat,SmsSection}};
+inline constexpr AppItem Applications[]={{"Maps",PackIcon::Map,9},{"Weather",PackIcon::Weather,10},{"Files",PackIcon::Files,7},{"CLI",PackIcon::Keyboard,30},{"RPT Scanner",PackIcon::Radio,RptScannerSection},{"RX Log",PackIcon::List,RxLogSection},{"Noise Floor",PackIcon::Signal,NoiseFloorSection},{"Tracks",PackIcon::Map,TracksAppSection},{"SMS",PackIcon::Chat,SmsSection},{"Notes",PackIcon::List,NotesSection},{"Scheduled",PackIcon::Chat,ScheduledSection},{"Self-test",PackIcon::Tools,SelfTestSection}};
 constexpr uint32_t AppKeepMs=600000;// an open app holds off the lock this long after the last input
 constexpr int ApplicationCount=sizeof(Applications)/sizeof(Applications[0]);
 // Grouped as theme.h SettingsGroupFirst: radio & mesh, connections, display, keyboard & sound, device, system.

@@ -6,6 +6,7 @@
 #include "ui/renderer.h"
 #include "ui/emoji_flags_mono.h"
 #include "ui/refresh.h"
+#include "ui/keyboard_navigation.h"
 #include "ui/navigation_catalog.h"
 #include "ui/utf8.h"
 #include "ui/composer_caret.h"
@@ -19,7 +20,11 @@ int main(){
  assert(c.display("⟦MΔRȻØ⟧")=="[MΔRCØ]");assert(c.display("𝐌𝐀𝐑𝐂𝐎")=="MARCO");assert(c.display("ᴍᴀʀᴄᴏ")=="MARCO");assert(c.display("plain")=="plain");
  assert(mm_flags::find(8*26+19)&&!mm_flags::find(25*26+25));/* IT yes, ZZ no */assert(c.width("🇮🇹",mm::Font::ChatBody)==mm_flags::W+2);
  assert(c.width("Ω",mm::Font::ChatBody)==c.width("O",mm::Font::ChatBody)||c.width("Ω",mm::Font::ChatBody)<14);/* a glyph, not the 14 px emoji box */assert(mm::mentionDisplayText("Weather 🇮🇹") == "Weather 🇮🇹");
- for(int i=0;i<mm::ApplicationCount;i++){auto r=mm::appRect(i);assert(r.x>=0&&r.y>=mm::StatusH&&r.x+r.w<=mm::W&&r.y+r.h<=mm::Bottom);for(int j=i+1;j<mm::ApplicationCount;j++){auto q=mm::appRect(j);assert(r.x+r.w<=q.x||q.x+q.w<=r.x||r.y+r.h<=q.y||q.y+q.h<=r.y);}}
+ {const int n=mm::ApplicationCount,per=mm::AppsPerPage;assert(n>per);/* the launcher pages */assert(std::string(mm::Applications[9].label)=="Notes"&&std::string(mm::Applications[10].label)=="Scheduled"&&std::string(mm::Applications[11].label)=="Self-test");
+  for(int p=0;p<mm::appPageCount(n,per);p++)for(int i=p*per;i<std::min(n,(p+1)*per);i++){auto r=mm::appRect(i);assert(r.x>=0&&r.y>=mm::StatusH&&r.x+r.w<=mm::W&&r.y+r.h<=mm::Bottom);for(int j=i+1;j<std::min(n,(p+1)*per);j++){auto q=mm::appRect(j);assert(r.x+r.w<=q.x||q.x+q.w<=r.x||r.y+r.h<=q.y||q.y+q.h<=r.y);}}
+  bool seen[64]={};std::vector<int> todo={0};seen[0]=true;while(!todo.empty()){int f=todo.back();todo.pop_back();for(char k:std::string("wasd")){int q=mm::moveLauncherFocus(f,k,n,mm::AppCols,per);if(!seen[q]){seen[q]=true;todo.push_back(q);}}}for(int i=0;i<n;i++)assert(seen[i]);/* keys reach every app */
+  {int f=0,pages=1;while(true){int next=mm::launcherSwipe(f,n,per,true);if(next==f)break;assert(mm::appPage(next,per)==mm::appPage(f,per)+1);f=next;pages++;}assert(pages==mm::appPageCount(n,per)&&mm::launcherSwipe(f,n,per,false)<f);}/* swipes walk page by page */
+  mm::State s;s.page=mm::Page::Home;mm::Renderer r(canvas);s.focus=0;r.launcher(s);std::vector<uint8_t> first(canvas.getBuffer(),canvas.getBuffer()+mm::W/8*mm::H);s.focus=per;r.launcher(s);assert(memcmp(first.data(),canvas.getBuffer(),first.size())!=0);/* page 2 draws differently */}
  assert(mm::MenuHomeTabCount==4&&mm::MenuHomeTabIcon==24&&mm::MenuHomeTabH==44);
  assert(mm::HomeTabs[2].section==19);for(auto app:mm::Applications)assert(app.section!=19&&app.section!=0&&app.section!=1);
  assert(mm::menuHomeRowRect(mm::MenuHomeRows-1).y+mm::MenuHomeRowH<mm::MenuHomeTabY);

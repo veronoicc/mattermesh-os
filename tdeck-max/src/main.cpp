@@ -1305,7 +1305,7 @@ void key(char c) {
   return;
  }
  if(screen==Screen::Launcher){
-  if(mm::directionKey(c)){launcherSelection=mm::moveAppFocus(launcherSelection,c,mm::ApplicationCount,mm::AppCols);render();}
+  if(mm::directionKey(c)){launcherSelection=mm::moveLauncherFocus(launcherSelection,c,mm::ApplicationCount,mm::AppCols,mm::AppsPerPage);render();}
   else if(c=='j'){launcherSelection=launcherSelection<0?0:(launcherSelection+1)%mm::ApplicationCount;render();}
   else if(c=='k'){launcherSelection=launcherSelection<0?mm::ApplicationCount-1:(launcherSelection+mm::ApplicationCount-1)%mm::ApplicationCount;render();}
   else if(c=='\n')openSection(mm::Applications[launcherSelection<0?0:launcherSelection].section);
@@ -1498,7 +1498,7 @@ void tap(int x,int y) {
  }
  if(screen==Screen::Launcher){
   if(mm::BackButton.contains(x,y)){screen=Screen::Home;render();return;}
-  for(int i=0;i<mm::ApplicationCount;i++)if(mm::appRect(i).contains(x,y)){launcherSelection=i;openSection(mm::Applications[i].section);return;}
+  {int first=mm::appPage(launcherSelection,mm::AppsPerPage)*mm::AppsPerPage;for(int i=first;i<mm::ApplicationCount&&i<first+mm::AppsPerPage;i++)if(mm::appRect(i).contains(x,y)){launcherSelection=i;openSection(mm::Applications[i].section);return;}}
   return;
  }
  if(screen==Screen::Section){
@@ -1627,6 +1627,7 @@ void tap(int x,int y) {
 void swipe(int dy) {if(deviceLocked||screen==Screen::Welcome||radioLinkAsking())return;
  device::activity();
  if(channelOptions||positionShare)return;
+ if(screen==Screen::Launcher){launcherSelection=mm::launcherSwipe(launcherSelection,mm::ApplicationCount,mm::AppsPerPage,dy<0);render();return;}// swipe up: next page of apps; a page change repaints once like the Settings pages
  if(screen==Screen::Section&&section==mm::BesideClockSection){stepHomeWidget(dy<0?1:-1);return;}// swipe up: next widget
  if(screen==Screen::Section&&section==mm::MainAreaSection){stepHomeMain(dy<0?1:-1);return;}
  if(screen==Screen::Home&&homeMain!=mm::MainChats)return;// the chat cards scroll only while they show

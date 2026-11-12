@@ -9,6 +9,7 @@
 #include "mesh/radio_presets.h"
 #include "emoji_choices.h"
 #include "navigation_catalog.h"
+#include "keyboard_navigation.h"
 #include "services/channel_qr.h"
 #include "cli_layout.h"
 #include "mesh/rx_log.h"
@@ -288,7 +289,10 @@ void Renderer::home(const State &s){
 }
 void Renderer::launcher(const State &s){
  shell(s,"App",true);g.fillRect(ComposeButton.x,StatusH,ComposeButton.w,HeaderH-1,BG);
- for(int i=0;i<ApplicationCount;i++){auto r=appRect(i);bool focused=s.focus==i;auto ink=focused?BG:FG;c.card(r,focused,5);auto label=c.lines(Applications[i].label,r.w-6,Font::ChatMeta);if(label.size()>2)label.resize(2);int top=label.size()>1?6:12;c.packIcon(Applications[i].icon,r.x+(r.w-32)/2,r.y+top,32,ink);for(unsigned l=0;l<label.size();l++)c.centered(r.x+2,r.y+top+44+l*14,r.w-4,label[l],Font::ChatMeta,ink);}
+ int page=appPage(s.focus,AppsPerPage),first=page*AppsPerPage,pages=appPageCount(ApplicationCount,AppsPerPage);
+ for(int i=first;i<ApplicationCount&&i<first+AppsPerPage;i++){auto r=appRect(i);bool focused=s.focus==i;auto ink=focused?BG:FG;c.card(r,focused,5);auto label=c.lines(Applications[i].label,r.w-6,Font::ChatMeta);if(label.size()>2)label.resize(2);int top=label.size()>1?6:12;c.packIcon(Applications[i].icon,r.x+(r.w-32)/2,r.y+top,32,ink);for(unsigned l=0;l<label.size();l++)c.centered(r.x+2,r.y+top+44+l*14,r.w-4,label[l],Font::ChatMeta,ink);}
+ // Page dots in the header's right corner (swipe / W S move between pages), only when there is more than one page.
+ if(pages>1)for(int p=0;p<pages;p++){int cx=W-Margin-4-(pages-1-p)*12,cy=StatusH+HeaderH/2;if(p==page)g.fillCircle(cx,cy,4,FG);else g.drawCircle(cx,cy,3,FG);}
 
 }
 // Thin track + 3 px thumb at the right edge (same as Home and Settings): first..first+visible of total.
