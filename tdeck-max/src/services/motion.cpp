@@ -35,8 +35,8 @@ void motionLoop(){
   case MotionPhase::Ready:{
    if(uint32_t(now-pollAt)<POLL_MS)return;pollAt=now;chip.poll();
    auto loc=locationState();heading.course(loc.courseDeg,loc.speedKmh,loc.courseValid&&loc.fix&&loc.fixAgeMs<3000,now);
-   state.accelFresh=accelAt&&uint32_t(now-accelAt)<FRESH_MS;state.anchored=heading.anchoredEver();state.anchorAgeMs=heading.anchorAge(now);
-   bool valid=heading.valid(now)&&rotationAt&&uint32_t(now-rotationAt)<FRESH_MS;state.headingValid=valid;state.heading=valid?heading.current():0;
+   state.accelFresh=sampleFresh(now,accelAt,FRESH_MS);state.anchored=heading.anchoredEver();state.anchorAgeMs=heading.anchorAge(now);
+   bool valid=heading.valid(now)&&sampleFresh(now,rotationAt,FRESH_MS);state.headingValid=valid;state.heading=valid?heading.current():0;
    if(valid!=(shownHeading>=0)||(valid&&fabsf(angleDelta(shownHeading,state.heading))>=5)){shownHeading=valid?state.heading:-1000;state.revision++;}
    return;}
   default:return;}

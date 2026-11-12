@@ -66,5 +66,7 @@ int main(){
  {HeadingTracker h;h.sample(350,0);h.course(5,5.0f,true,10);for(uint32_t t=40;t<2000;t+=40)h.sample(10,t);assert(fabsf(angleDelta(h.current(),25))<1&&h.current()>=0&&h.current()<360);}
  // Relative bearing for the radar: node at north-east, device facing east, is ahead-left; wraps into 0..359.
  assert(relativeBearing(45,90)==315&&relativeBearing(10,350)==20&&relativeBearing(0,0)==0);
+ // Sample freshness: a sample stamped after `now` (taken during the poll that follows reading the clock) is fresh, not 49 days old; rollover safe.
+ assert(sampleFresh(1000,1010,2000)&&sampleFresh(5000,4000,2000)&&!sampleFresh(5000,2999,2000)&&!sampleFresh(5000,0,2000)&&sampleFresh(5,0xFFFFFFF0u,2000));
  std::puts("PASS: raise gesture (table, raise, pocket, walking, put down, hold, cooldown, sensitivity), heading math (wrap, smoothing, quaternion, GPS anchor, rate limit, expiry), relative bearing");
 }

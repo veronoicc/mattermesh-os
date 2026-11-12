@@ -9,6 +9,8 @@ inline float wrapDegrees(float d){d=fmodf(d,360.0f);if(d<0)d+=360.0f;return d>=3
 inline float angleDelta(float from,float to){float d=wrapDegrees(to-from);return d>180.0f?d-360.0f:d;}
 inline float smoothAngle(float current,float target,float alpha){return wrapDegrees(current+alpha*angleDelta(current,target));}
 inline const char *compassName(float degrees){static const char *names[]={"N","NE","E","SE","S","SW","W","NW"};return names[int((wrapDegrees(degrees)+22.5f)/45.0f)%8];}
+// A sample stamped `at` (0 = none yet) is fresh within windowMs of now; a stamp after now (set during a poll that follows reading the clock) counts as fresh.
+inline bool sampleFresh(uint32_t now,uint32_t at,uint32_t windowMs){return at&&int32_t(now-at)<int32_t(windowMs);}
 // Bearing of a point relative to where the device faces (0 ahead, 90 to the right), whole degrees 0..359.
 inline int relativeBearing(int bearing,int heading){return int(wrapDegrees(float(bearing-heading)));}
 // Heading of the device from its rotation quaternion (game rotation vector: x,y,z,w, device to world, z up): the top edge while
