@@ -101,6 +101,7 @@ void Renderer::lock(const State &s){
   c.centered(plate.x,plate.y+2,plate.w,text,Font::ChatMeta);}
  if(!s.quickReply&&(s.lockHint||s.unlockTapCount||s.unlockCounting))unlockTapBanner(s.unlockTapCount);
  if(s.quickReply)quickReply(s);
+ if(s.pin.active)pinPad(s);
 }
 void Renderer::quickReply(const State &s){
  auto panel=QuickReplyPanel;g.fillRect(0,panel.y,W,H-panel.y,BG);c.card(panel); // full width: also hides the hero card edges
@@ -631,6 +632,7 @@ void Renderer::settings(const State &s){
    case HomeWidgetsSection:return "Beside clock: "+std::string(widgetInfo(s.homeWidget).name);
    case 21:return std::string("Dictation: ")+device::dictationLanguageName(s.dictationLanguage);case 20:return "Light timers / auto lock";case 5:return s.status.battery<0?"--%":std::to_string(s.status.battery)+"%";
    case 16:return s.timeSource;case 24:return s.sd?"SD available":"No SD";case 11:return "USB diagnostics";case 17:return "Update your firmware";
+   case SecuritySection:return s.sec.on?std::string("PIN on / ask ")+s.sec.requireName:std::string("Off");case BackupSection:return "Save or restore settings";
    case SupportSection:return "Support the project";default:return "Version "+s.version;}};
   std::string detail=detailFor(SettingsItems[i].section);
   c.menuRow(r,SettingsItems[i].icon,SettingsItems[i].label,detail,s.settingsFocus==i);
@@ -1023,10 +1025,13 @@ void Renderer::section(const State &s){
 #include "quickmsg_renderer.inc"
 #include "delivery_renderer.inc"
 #include "scheduled_renderer.inc"
+#include "security_renderer.inc"
+#include "backup_renderer.inc"
 void Renderer::radioLinkAsk(){Rect panel=overlayPanel();c.text(Margin+8,Top+15,"Companion connected",Font::ChatTitle,FG,panel.w-16);c.text(Margin+8,Top+50,"Download the messages",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+66,"from the companion?",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+90,"No: they stay on it,",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+106,"new ones too.",Font::ChatMeta,FG,panel.w-16);c.button(RadioLinkAskNo,"NO");c.button(RadioLinkAskYes,"YES",true);}
 
 void Renderer::draw(const State &s){switch(s.page){
  case Page::SelfTest:selfTestApp(s);break;
+ case Page::Security:securityPage(s);break;case Page::Backup:backupPage(s);break;
  case Page::RadioLink:case Page::RadioLinkSettings:case Page::WebApp:radioLinkPages(s);break;case Page::TracksApp:case Page::TracksSettings:tracksPages(s);break;case Page::DmPath:dmPathPage(s);break;case Page::Cli:cliApp(s);break;case Page::RxLog:rxLogApp(s);break;case Page::NoiseFloor:noiseApp(s);break;case Page::RptScanner:rptApp(s);break;case Page::Cellular:cellularPage(s);break;case Page::Sms:smsPage(s);break;
  case Page::Notes:notesPage(s);break;
  case Page::QuickMessages:quickPage(s);break;case Page::Delivery:deliveryPage(s);break;case Page::Scheduled:scheduledPage(s);break;

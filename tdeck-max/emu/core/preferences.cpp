@@ -290,3 +290,43 @@ int emuNvsErase() {
   std::lock_guard<std::mutex> g(nvsMutex);
   return save(Store()) ? 0 : -1;
 }
+// nvs.h stub (emu/include/nvs.h): a snapshot of every entry, walked like nvs_entry_find / nvs_entry_next.
+#include "nvs.h"
+struct EmuNvsIter {
+  std::vector<nvs_entry_info_t> entries;
+  size_t at = 0;
+};
+nvs_iterator_t nvs_entry_find(const char *, const char *ns, nvs_type_t) {
+  std::lock_guard<std::mutex> g(nvsMutex);
+  auto *it = new EmuNvsIter;
+  for (auto &n : load())
+    for (auto &v : n.second) {
+      if (ns && n.first != ns)
+        continue;
+      nvs_entry_info_t info{};
+      strncpy(info.namespace_name, n.first.c_str(), 15);
+      strncpy(info.key, v.first.c_str(), 15);
+      static const nvs_type_t map[] = {NVS_TYPE_I8, NVS_TYPE_U8, NVS_TYPE_I16, NVS_TYPE_U16, NVS_TYPE_I32,
+                                       NVS_TYPE_U32, NVS_TYPE_I64, NVS_TYPE_U64, NVS_TYPE_STR, NVS_TYPE_BLOB};
+      info.type = map[int(v.second.type)];
+      it->entries.push_back(info);
+    }
+  if (it->entries.empty()) {
+    delete it;
+    return nullptr;
+  }
+  return it;
+}
+nvs_iterator_t nvs_entry_next(nvs_iterator_t p) {
+  auto *it = static_cast<EmuNvsIter *>(p);
+  if (++it->at >= it->entries.size()) {
+    delete it;
+    return nullptr;
+  }
+  return it;
+}
+void nvs_entry_info(nvs_iterator_t p, nvs_entry_info_t *out) {
+  auto *it = static_cast<EmuNvsIter *>(p);
+  *out = it->entries[it->at];
+}
+void nvs_release_iterator(nvs_iterator_t p) { delete static_cast<EmuNvsIter *>(p); }

@@ -181,6 +181,8 @@ void dmPathOpen(int chat);void dmPathCompose(mm::State &v);bool dmPathKeyPress(c
 void webCompose(mm::State &v);bool webKey(char c);bool webTap(int x,int y);bool webSerial(const String &s);void webLoop();bool webActive();void webPause();void webResume();// web_app.inc
 bool radioLinkActive();bool radioLinkConnected();bool radioLinkAsking();void radioLinkAnswer(bool yes);size_t radioLinkTextLimit(bool direct);bool radioLinkChatSend(int chat,const String &body,uint32_t token,String &reason);void radioLinkBegin();void radioLinkLoop();void radioLinkCompose(mm::State &v);bool radioLinkKey(char c);bool radioLinkTap(int x,int y);String *radioLinkField();void radioLinkLeft();bool radioLinkSerial(const String &s);// companion link (radio_link_app.inc)
 void cellularCompose(mm::State &v);bool cellularKey(char c);bool cellularTap(int x,int y);String *cellularField();void cellularLeft();void cellularTick();// Settings > Cellular (cellular_app.inc)
+bool pinPadOpen=false;void securityBegin();void securityCompose(mm::State &v);bool securityKey(char c);bool securityPadKey(char c);bool securityTap(int x,int y);bool securityBack();void securityLeft();void securityOpen();bool securitySerial(const String &s);bool usbBlocked();bool serialAllowedLocked(const String &s);bool lockReplyBlocked();bool pinNeededNow();void pinOpenPad();void securityLocked();void securityUnlocked();void pinLockKeyEvent(int code,bool pressed);void pinLockKey(char c);void pinLockTap(int x,int y);void pinLockPoll();// Settings > Security and the lock PIN (security_app.inc)
+void backupCompose(mm::State &v);bool backupKey(char c);bool backupTap(int x,int y);String *backupField();bool backupBack();void backupLeft();void backupOpen();bool backupSerial(const String &s);// Settings > Backup / restore (backup_app.inc)
 void smsCompose(mm::State &v);bool smsKey(char c);bool smsTap(int x,int y);String *smsField();bool smsBack();bool smsTyping();void smsAppend(const std::string &utf8);void smsOpened();void smsLeft();void smsLoop();// SMS app (sms_app.inc)
 void mapOpen();void mapClose();void routeOpen(const std::string &path,const std::string &sender);void routeClose();bool routeLoading();void routeCompose(mm::State &v);void mapCompose(mm::State &v);void mapPan(int dx,int dy);
 void tracksOpen(int id);void tracksLeft(int next);void tracksCompose(mm::State &v);bool tracksBack();bool tracksKey(char c);bool tracksTap(int x,int y);bool tracksScroll(int dy);void tracksUiLoop();bool tracksSerial(const String &s);// tracks_app.inc
@@ -749,6 +751,7 @@ if(!deviceLocked&&screen==Screen::Section&&(section==mm::CellularSection||sectio
 if(!deviceLocked&&screen==Screen::Section&&section==mm::SelfTestSection)selfTestCompose(v);
  v.homeWidget=homeWidget;v.homeWidgetFocus=homeWidgetFocus;v.homeMain=homeMain;v.homeMainFocus=homeMainFocus;v.homeWidgetsRow=homeWidgetsRow;// Settings shows the choices on its Home widgets rows
  if(screen==Screen::Section&&section==mm::NoteSection)v.noteInput=noteInput.c_str();
+ securityCompose(v);if(!deviceLocked&&screen==Screen::Section&&section==mm::BackupSection)backupCompose(v);// the PIN pad and the Security / Backup pages; hidden lock-screen previews
  if(!deviceLocked&&(screen==Screen::Home||(screen==Screen::Section&&section==mm::MainAreaSection)))fillMainWidget(v);// Home widgets draws Home from its own state
  if(!deviceLocked&&(screen==Screen::Home||(screen==Screen::Section&&section==mm::BesideClockSection)))fillHomeWidget(v);
  return v;
@@ -865,6 +868,7 @@ mm::Page sectionPage(int id){
  if(id==mm::CellularSection)return mm::Page::Cellular;if(id==mm::SmsSection)return mm::Page::Sms;
  if(id==mm::SelfTestSection)return mm::Page::SelfTest;
  if(id==mm::NotesSection)return mm::Page::Notes;
+ if(id==mm::SecuritySection)return mm::Page::Security;if(id==mm::BackupSection)return mm::Page::Backup;
  switch(id){case mm::WebAppSection:return mm::Page::WebApp;case mm::DmPathSection:return mm::Page::DmPath;case mm::RadioLinkSection:return mm::Page::RadioLink;case mm::RadioLinkSettingsSection:return mm::Page::RadioLinkSettings;case 1:return mm::Page::Mesh;case 2:return mm::Page::Radio;case 3:return mm::Page::GPS;case 4:return mm::Page::Wifi;case 5:return mm::Page::Battery;case 6:return mm::Page::Controls;case 7:return mm::Page::Files;case 8:return mm::Page::Info;case 9:return mm::Page::Maps;case 10:return mm::Page::Weather;case 11:return mm::Page::Terminal;case 14:return mm::Page::Bluetooth;case 16:return mm::Page::DateTime;case 17:return mm::Page::Updates;case mm::QuickSettingsSection:return mm::Page::QuickSettings;case 19:return mm::Page::Settings;case 20:return mm::Page::Power;case 21:return mm::Page::Audio;case 22:return mm::Page::Wallpaper;case mm::KeyboardSection:return mm::Page::Keyboard;case 23:return mm::Page::Antenna;case mm::AccentKeySection:return mm::Page::AccentKey;case mm::HomeWidgetsSection:return mm::Page::HomeWidgets;case mm::BesideClockSection:return mm::Page::BesideClock;case mm::MainAreaSection:return mm::Page::MainArea;case mm::NoteSection:return mm::Page::Note;case 24:return mm::Page::Storage;case mm::CliSection:return mm::Page::Cli;case mm::RxLogSection:return mm::Page::RxLog;case mm::NoiseFloorSection:return mm::Page::NoiseFloor;case mm::RptScannerSection:return mm::Page::RptScanner;case mm::SupportSection:return mm::Page::Support;default:return mm::Page::Info;}
 }
 void renderSection(){
@@ -910,6 +914,7 @@ void openSection(int id,bool paint){
  if(section==mm::SelfTestSection)selfTestOpen();
  if(section==mm::NotesSection)notesOpen();
  if(section==mm::QuickMessagesSection)quickmsgOpen(section);if(section==mm::DeliverySection)deliveryOpen(section);if(section==mm::ScheduledSection)schedOpen(section);
+ if(section==mm::SecuritySection)securityOpen();if(section==mm::BackupSection)backupOpen();
  radioPowerEditing=false;radioDevicePage=false;radioDeviceFocus=0;if(section==2)loadRadioDraft(false);
  if(section==0){searching=false;searchQuery="";messagesMenu=false;chatsParent=screen==Screen::Launcher?Screen::Launcher:Screen::Home;screen=Screen::Chats;}
  else {sectionParent=screen==Screen::Launcher?Screen::Launcher:Screen::Home;screen=Screen::Section;}
@@ -1076,11 +1081,12 @@ void selectLoRaTab(bool device,bool focusTab=false){radioDevicePage=device;radio
 void activateRadioFocus(){if(radioFocus==0)cycleRadioPreset(1);else if(radioFocus<=5)editRadioField(radioFocus-1);else if(radioFocus==6)applyRadioDraft();else if(radioFocus>=8)selectLoRaTab(radioFocus==9);else sendAdvert();}
 
 void back() {
- if(deviceLocked){if(quickReply.active)closeQuickReply();return;}
+ if(deviceLocked){if(pinPadOpen)pinLockKey(3);else if(quickReply.active)closeQuickReply();return;}
  if(radioLinkAsking()){radioLinkAnswer(false);return;}
  if(screen==Screen::Welcome){welcomeBack();return;}
  if(screen==Screen::Section&&mm::toolsSection(section)&&toolsBack())return;
  if(screen==Screen::Section&&section==mm::SelfTestSection&&selfTestBack())return;
+ if(securityBack())return;if(backupBack())return;
  if(tracksBack())return;
  if(quickmsgBack()||deliveryBack()||schedBack())return;
  if(screen==Screen::Section&&section==mm::SmsSection&&smsBack())return;
@@ -1149,6 +1155,7 @@ if(screen==Screen::Chat&&quickPickShown())return nullptr;// the quick message pi
  if(screen==Screen::Section&&section==mm::CellularSection)return cellularField();
 if(screen==Screen::Section&&section==mm::QuickMessagesSection)return quickmsgField();
  if(screen==Screen::Section&&section==mm::ScheduledSection)return schedField();
+ if(screen==Screen::Section&&section==mm::BackupSection)return backupField();
  if(screen==Screen::Section&&section==mm::SmsSection)return smsField();
  if(screen==Screen::Section&&section==mm::NotesSection)return notesField();
  if(screen==Screen::NewChat){if(formField==1)return newForm==int(mm::ChannelForm::JoinPrivate)?&newKey:nullptr;return formField==0?&newName:&newScope;}
@@ -1164,6 +1171,8 @@ if(screen==Screen::Section&&section==mm::QuickMessagesSection)return quickmsgFie
 #include "radio_link_app.inc"
 #include "cellular_app.inc"
 #include "mqtt_downlink_app.inc"
+#include "security_app.inc"
+#include "backup_app.inc"
 #include "sms_app.inc"
 #include "web_app.inc"
 #include "cli_app.inc"
@@ -1202,6 +1211,7 @@ void appVisibilityLoop(){
   if(previous==mm::RadioLinkSection||previous==mm::RadioLinkSettingsSection)radioLinkLeft();
   if(previous==mm::CellularSection)cellularLeft();if(previous==mm::SmsSection)smsLeft();
   if(previous==mm::SelfTestSection)selfTestLeft();
+  if(previous==mm::SecuritySection)securityLeft();if(previous==mm::BackupSection)backupLeft();
   if(previous==9)mapClose();else if(previous==4)wifiPageLeft();else if(previous==14){bleNameEditing=false;bleNameInput="";}else if(mm::toolsSection(previous))toolsClose(previous);
   if(previous==mm::TracksAppSection)tracksLeft(now);
   if(previous==mm::NotesSection)notesLeft();
@@ -1317,16 +1327,19 @@ void openHomeWidgetsRow(int row){openSection(row?mm::MainAreaSection:mm::BesideC
 void useHomeWidget(){if(homeWidgetFocus==homeWidget){notice="In use on Home";render();return;}bool ok=setHomeWidget(homeWidgetFocus);notice=ok?"In use on Home":"Save failed";if(!ok)homeWidgetFocus=homeWidget;render();}
 void key(char c) {
  if(holdMenu){holdMenu=0;dirty=true;}// a key closes the copy / paste buttons and does its usual work
- if(deviceLocked){if(quickReply.active)quickReplyKey(c);return;}
+ if(deviceLocked){if(pinPadOpen)pinLockKey(c);else if(quickReply.active)quickReplyKey(c);return;}
  if(screen==Screen::Welcome){device::activity();welcomeKey(c);return;}
  if(radioLinkAsking()){device::activity();if(c=='y'||c=='\n')radioLinkAnswer(true);else if(c=='n')radioLinkAnswer(false);return;}
  device::activity();
  if(c==3){back();return;}
+ if(securityPadKey(c))return;
  if(dmPathKeyPress(c))return;
  if(c!='\b'&&webKey(c))return;
  if(c!='\b'&&tracksKey(c))return;
  if(c!='\b'&&(quickmsgKey(c)||deliveryKey(c)||schedKey(c)))return;
  if(c!='\b'&&cellularKey(c))return;
+ if(c!='\b'&&securityKey(c))return;
+ if(c!='\b'&&backupKey(c))return;
  if(c!='\b'&&smsKey(c))return;
  if(c!='\b'&&notesKey(c))return;
  if(screen==Screen::Section&&mm::toolsSection(section)&&toolsKey(c))return;
@@ -1526,7 +1539,7 @@ bool bannerTap(int x,int y){
 void tap(int x,int y) {
  if(x<0||x>=mm::W||y<0||y>=mm::H)return;
  if(radioLinkAsking()){device::activity();if(mm::RadioLinkAskYes.contains(x,y))radioLinkAnswer(true);else if(mm::RadioLinkAskNo.contains(x,y))radioLinkAnswer(false);return;}
- if(deviceLocked){if(quickReply.active){quickReplyInputAt=millis();if(mm::QuickReplySend.contains(x,y))sendQuickReply();else if(mm::QuickReplyCancel.contains(x,y)||mm::BackButton.contains(x,y))closeQuickReply();}return;}device::activity();
+ if(deviceLocked){if(pinPadOpen){pinLockTap(x,y);return;}if(quickReply.active){quickReplyInputAt=millis();if(mm::QuickReplySend.contains(x,y))sendQuickReply();else if(mm::QuickReplyCancel.contains(x,y)||mm::BackButton.contains(x,y))closeQuickReply();}return;}device::activity();
  if(channelOptions){if(mm::BackButton.contains(x,y)){back();return;}if(deleteChannelConfirm){if(mm::ChatClearYes.contains(x,y))deleteSelectedChannel();else if(mm::ChatClearNo.contains(x,y))back();}else if(channelKeyView)back();else{const bool direct=chats[channelOptionTarget].direct;for(int slot=0;slot<(direct?2:3);slot++)if(mm::channelOptionRect(slot).contains(x,y)){channelOption(direct&&slot==1?2:slot);break;}}return;}
  Serial.printf("TOUCH_TAP x=%d y=%d screen=%d\n",x,y,int(screen));
  if(screen==Screen::Welcome){welcomeTap(x,y);return;}
@@ -1553,6 +1566,8 @@ void tap(int x,int y) {
   if(section==mm::SelfTestSection&&selfTestTap(x,y))return;
   if(radioLinkTap(x,y))return;
   if(cellularTap(x,y))return;
+  if(securityTap(x,y))return;
+  if(backupTap(x,y))return;
   if(smsTap(x,y))return;
   if(webTap(x,y))return;
  if(tracksTap(x,y))return;
@@ -1801,6 +1816,7 @@ void micInput(device::MicSource source,bool pressed){
 void keyboardEvent(int event,uint32_t capturedAt=0,bool hardwareDebounced=false) {
  bool pressed=event&0x80;int code=event&0x7f;
  if(deviceLocked){
+  if(pinPadOpen){pinLockKeyEvent(code,pressed);return;}
   if(code==21){
    uint32_t now=capturedAt?capturedAt:millis();
    if(pressed){if(lockEnter.press(now,hardwareDebounced)&&!quickReply.active){pendingQuickOriginal=device::ReplyOriginal{};{matter::Record r;if(loadedRecord(paintedLockToken,r)&&!r.mine&&r.chat>=0&&r.chat<chatCount){pendingQuickOriginal=replyOriginalFrom(r);}}}}
@@ -1881,7 +1897,7 @@ void feedTouch(bool down,int x,int y,uint32_t now){
  touchPipeline.feed(down,x,y,now,touchScene(),target,key,allowed);
 }
 void captureTouch(bool force){
- if((deviceLocked&&!quickReply.active)||!touchBackend||!touchDisplayReady||uiReplay.kind==1)return;static uint32_t polled=0;uint32_t now=millis();if(!force&&uint32_t(now-polled)<device::TOUCH_POLL_MS)return;polled=now;
+ if((deviceLocked&&!quickReply.active&&!pinPadOpen)||!touchBackend||!touchDisplayReady||uiReplay.kind==1)return;static uint32_t polled=0;uint32_t now=millis();if(!force&&uint32_t(now-polled)<device::TOUCH_POLL_MS)return;polled=now;
  if(injectedTouchUntil&&int32_t(injectedTouchUntil-now)>0){feedTouch(true,injectedTouchX,injectedTouchY,now);return;}injectedTouchUntil=0;
  int16_t x=0,y=0;bool down;
  hyn_touch_get_point(&x,&y,1);down=hyn_touch_get_contact_point(&x,&y);
@@ -1890,7 +1906,8 @@ void captureTouch(bool force){
 void serviceReplay(){if(!uiReplay.kind)return;uint32_t now=millis();if(!uiReplay.started)uiReplay.started=now;uint32_t age=now-uiReplay.started;if(uiReplay.kind==1){if(age>=100&&age<160)feedTouch(true,mm::ComposerEmoji.x+15,mm::ComposerEmoji.y+15,now);else if(age>=160){feedTouch(false,0,0,now);if(age>=200)uiReplay.kind=0;}}else if(uiReplay.kind==3){const uint32_t times[]={100,160,220,220};const int edges[]={33,161,33,33};while(uiReplay.step<4&&age>=times[uiReplay.step])captureKeyEvent(edges[uiReplay.step++],now);if(uiReplay.step==4)uiReplay.kind=0;}else if(age>=100){captureKeyEvent(device::MICROPHONE_KEYCODE,now);uiReplay.released=true;uiReplay.kind=0;}}
 void pollTouch(){
  captureTouch();serviceTouchKeys();device::TouchAction event;if(!touchPipeline.pop(event))return;
- if((deviceLocked&&!quickReply.active)||event.scene!=touchScene()){touchStale++;return;}
+ if((deviceLocked&&!quickReply.active&&!pinPadOpen)||event.scene!=touchScene()){touchStale++;return;}
+ if(deviceLocked&&pinPadOpen){if(event.kind==device::TouchActionKind::Tap)tap(event.x,event.y);return;}
  lastTouchDispatchMs=millis()-event.releasedAt;maxTouchDispatchMs=max(maxTouchDispatchMs,lastTouchDispatchMs);touchDispatched++;
  if(radioLinkAsking()){if(event.kind==device::TouchActionKind::Tap)tap(event.x,event.y);return;}/* only its two buttons: no row, hold or pan under it */
  if(event.kind==device::TouchActionKind::Hold){if(event.target>=mm::MessageHoldTarget&&chatHoldable()){int i=event.target-mm::MessageHoldTarget;if(i<int(paintedChatMessages.size())){auto &hit=paintedChatMessages[i];int above=hit.area.y-mm::HoldMenuH-4;openHoldMenu(1,above>=mm::Top+2?above:hit.area.y+hit.area.h+4,String(hit.message.body.c_str()));/* above the bubble, below it when there is no room */render();}}
@@ -1918,6 +1935,7 @@ bool consumeLockMessage(uint32_t token){
  if(auto e=radioJournal.index.find(token))if(!e->mine){if(!radioJournal.markOneRead(e->chat,token)){lockReadError="Read not saved / try again";return false;}device::restoreUnreadCounts(radioJournal.index,radioJournal.readTokens,unreadMessages,size_t(chatCount));if(token==lastReceivedToken)lastReceivedRead=true;lockReadError.clear();return true;}return true;
 }
 void openQuickReply(){
+ if(lockReplyBlocked())return;// a PIN or hidden previews: the lock screen answers nothing
  if(!deviceLocked||quickReply.active||!quickReply.open(pendingQuickOriginal,messageByteLimit(pendingQuickOriginal.chat)))return;
  unlockTaps.reset();unlockCountdownAt=lockHintUntil=0;keyboardModifiers.reset();deleteHeld=false;
  quickReplyInputAt=millis();setCpuFrequencyMhz(device::NORMAL_CPU_FREQUENCY);device::unlockLightPreview(true);setTouchEnabled(true);lockScreenDirty=true;render();
@@ -1953,21 +1971,24 @@ void pollQuickReply(){
 
  if(deviceLocked&&lockEnter.tick(millis())==device::EnterAction::Hold&&!quickReply.active)openQuickReply();
  lockEnter.recover(millis());static bool wasBoot=false;bool boot=digitalRead(BOARD_BOOT_PIN)==LOW;if(quickReply.active&&boot&&!wasBoot)closeQuickReply();wasBoot=boot;
+ {static bool padBoot=false;bool boot=digitalRead(BOARD_BOOT_PIN)==LOW;if(pinPadOpen&&boot&&!padBoot)pinLockKey(3);padBoot=boot;}
 }
 void enterLockMode(){
  if(screen==Screen::Welcome||welcomeWifi)return;// never lock during the first-boot setup
  cancelDictation();device::audioCancel();previousScreen=screen;deviceLocked=true;quickTxReady=false;quickReply.close();lockReadError.clear();lockEnter.reset();unlockTaps.reset();lockTaps.reset();lockMessages.reset(lockMessageTokens());lockMessageShownAt=millis();lockHintUntil=unlockCountdownAt=0;lockHintPainted=false;renderedUnlockTaps=-1;
  pendingKeys.reset();inputBannerUntil=chatErrorUntil=0;altSpaceHeld=false;deleteHeld=false;keyboardModifiers.reset();setTouchEnabled(false);enterLowPowerMode();lockMinute=time(nullptr)/60;lockScreenDirty=false;
+ securityLocked();
  bool batched=batchingInput;batchingInput=false;render();batchingInput=batched;
 }
 void exitLockMode(){
  exitLowPowerMode();deviceLocked=false;unlockTaps.reset();lockTaps.reset();lockHintUntil=unlockCountdownAt=0;altSpaceHeld=false;
+ securityUnlocked();
  quickReply.close();lockEnter.reset();if(activeChat>=0&&activeChat<MAX_CHATS&&!input.isEmpty()){chatDrafts.saved[activeChat]=input;input="";inputCursor=-1;}
  scopePicker=scopeEditing=clearChatConfirm=chatDetails=messageActions=messagePath=emojiPicker=channelOptions=deleteChannelConfirm=positionShare=false;scopeInput="";notice="";navigation.clear();
  screen=Screen::Home;homeSelection=-1;
  setTouchEnabled(true);radioDirty=false;lockScreenDirty=false;bool batched=batchingInput;batchingInput=false;render();batchingInput=batched;
 }
-void updateLockScreen(){if(!deviceLocked)return;static bool viaPainted=false;bool via=uint32_t(millis()-lockMessageShownAt)<device::LOCK_RX_REPEATER_MS;if(via!=viaPainted){viaPainted=via;lockScreenDirty=true;}uint32_t minute=time(nullptr)/60;if(minute!=lockMinute){lockMinute=minute;lockScreenDirty=true;}uint32_t settle=quickReply.active?UI_INPUT_SETTLE_MS:500;if(lockScreenDirty&&!matter::busy()&&millis()-lastPaint>=settle){lockScreenDirty=false;render();}}
+void updateLockScreen(){if(!deviceLocked)return;static bool viaPainted=false;bool via=uint32_t(millis()-lockMessageShownAt)<device::LOCK_RX_REPEATER_MS;if(via!=viaPainted){viaPainted=via;lockScreenDirty=true;}uint32_t minute=time(nullptr)/60;if(minute!=lockMinute){lockMinute=minute;lockScreenDirty=true;}uint32_t settle=(quickReply.active||pinPadOpen)?UI_INPUT_SETTLE_MS:500;if(lockScreenDirty&&!matter::busy()&&millis()-lastPaint>=settle){lockScreenDirty=false;render();}}
 void handleLockKey(bool pressed,uint32_t capturedAt,bool hardwareDebounced){
  uint32_t now=capturedAt?capturedAt:millis();
  if(deviceLocked){
@@ -1985,7 +2006,8 @@ void pollLockKey(){
  uint32_t now=millis();
  if(deviceLocked){
   if(quickReply.active){if(getCpuFrequencyMhz()!=device::NORMAL_CPU_FREQUENCY)setCpuFrequencyMhz(device::NORMAL_CPU_FREQUENCY);return;}
-  if(unlockCountdownAt&&uint32_t(now-unlockCountdownAt)>=device::UNLOCK_COUNTDOWN_MS){exitLockMode();return;}
+  if(pinPadOpen){pinLockPoll();return;}
+  if(unlockCountdownAt&&uint32_t(now-unlockCountdownAt)>=device::UNLOCK_COUNTDOWN_MS){if(pinNeededNow())pinOpenPad();else exitLockMode();return;}
   bool held=unlockTaps.down;if(unlockTaps.expire(now)){if(held)lockRecoveries++;device::unlockLightPreview(false);restoreLockedCpu();lockScreenDirty=true;}
   bool hint=lockHintUntil&&int32_t(lockHintUntil-now)>0;if(hint!=lockHintPainted||unlockTaps.taps!=renderedUnlockTaps){lockHintPainted=hint;lockScreenDirty=true;}
   if(!unlockTaps.active()&&millis()-lockedCpuPollAt>=500){lockedCpuPollAt=millis();restoreLockedCpu();}return;
@@ -2033,6 +2055,7 @@ static void dictationFileTest(const String &path){
 #endif
 }
 void handle(const String &s) {
+ if(usbBlocked()&&!serialAllowedLocked(s)){Serial.println("USB_BLOCKED locked=1");return;}// Settings > Security: no data over USB while locked
  if(device::sdTransferCommand(s))return;
  if(s.startsWith("dictation cores ")){int c=s.substring(16).toInt();device::offlineItalianDebug(c,-1);Serial.printf("OFFLINE_IT_DEBUG cores=%d\n",c);return;}
  if(s=="dictation trace on"||s=="dictation trace off"){bool on=s.endsWith("on");device::offlineItalianDebug(-1,on);Serial.printf("OFFLINE_IT_DEBUG trace=%d\n",on);return;}
@@ -2159,7 +2182,8 @@ void handle(const String &s) {
  if(s=="dictation status"){auto a=device::audioState();Serial.printf("DICTATION_STATUS available=%d held=%u busy=%d recording=%d warming=%d transcribing=%d limit=%d samples=%lu pcm_bytes=%lu capture_ms=%lu stop_ms=%lu stt_ms=%lu internal_before=%lu internal_min=%lu psram_before=%lu psram_min=%lu psram_total=%u flash_total=%u error=%d transcript_bytes=%u draft_bytes=%u\n",device::OFFLINE_ITALIAN_AVAILABLE,unsigned(dictationHold.source),a.busy,a.recording,a.warming,a.transcribing,a.limitReached,a.samples,a.pcmBytes,a.captureMs,a.stopLatencyMs,a.transcribeMs,a.internalBefore,a.internalMin,a.psramBefore,a.psramMin,ESP.getPsramSize(),ESP.getFlashChipSize(),a.lastError,unsigned(a.transcript.length()),unsigned(input.length()));return;}
  if(s=="lock status"){auto p=device::powerState();Serial.printf("LOCK_STATUS locked=%d previous=%d cpu=%u touch_disabled=%d display=%u keyboard=%u unread=%u rx=%lu target=%d taps=%d boost=%d requested=%lu last_read=%d down=%d complete=%d recoveries=%lu hw_overflow=%lu irq=%d uptime=%lu\n",deviceLocked,int(previousScreen),getCpuFrequencyMhz(),deviceLocked&&expanderReady&&expander.digitalRead(BOARD_XL9555_07_TOUCH_RST)==LOW,p.displayPWM,p.keyboardPWM,uiState().unread,matter::snapshot().received,lastReceivedChat,unlockTaps.taps,unlockTaps.active(),requestedLockedCpu(),lastReceivedRead,unlockTaps.down,unlockTaps.completed,lockRecoveries,keyboardHardwareOverflows,digitalRead(BOARD_KEYBOARD_INT),millis());return;}
  if(s=="lock test-rx"){matter::Received m;for(int i=0;i<chatCount;i++)if(channelReady[i]){m.channelId=i;break;}m.sender="LOCK TEST (synthetic)";m.body="MATTERMESH LOCK callback test";m.timestamp=time(nullptr);m.hops=2;m.scope="*";m.path="flood:ab,cd";incomingRadio(m);render();return;}
- if(deviceLocked&&!(quickReply.active&&(s.startsWith("tap ")||s.startsWith("type ")||s.startsWith("key ")))&&s!="status"&&s!="shot"&&s!="render"&&s!="notify incoming"&&s!="radio status"&&s!="device status"&&!s.startsWith("event ")){Serial.println("UI_READY locked=1 ignored=1");return;}
+ if(deviceLocked&&!((quickReply.active||pinPadOpen)&&(s.startsWith("tap ")||s.startsWith("type ")||s.startsWith("key ")))&&s!="status"&&s!="shot"&&s!="render"&&s!="notify incoming"&&s!="radio status"&&s!="device status"&&s!="security status"&&!s.startsWith("event ")){Serial.println("UI_READY locked=1 ignored=1");return;}
+ if(backupSerial(s)||securitySerial(s))return;
  if(s=="status")Serial.printf("STATUS reset=%d radio=meshcore sd=%d keyboard=%d screen=%d chats=%d selected=%d active=%d field=%d touch=%d touch_events=%lu key_events=%lu caps=%d symbols=%d kbd_light=%u input_len=%u section=%d filter=%d screen_light=%u haptic_ready=%d haptic_enabled=%d haptic_pulses=%lu haptic_effect=%u haptic_go=%u searching=%d query_len=%u chat_offset=%d file_count=%d message_actions=%d message_path=%d channel_muted=%d stack_free=%u radio_power_edit=%d node_scroll=%d\n",(int)esp_reset_reason(),sdReady,keyboardReady,int(screen),chatCount,selected,activeChat,formField,touchBackend,touchEvents,keyboardEvents,shiftHeld(),keyboardModifiers.symbols(),keyboardBrightness,input.length(),section,discoverFilter,displayBrightness,hapticReady,hapticEnabled,hapticPulses,hapticReady?haptic.readRegister8(DRV2605_REG_WAVESEQ1):0,hapticReady?haptic.readRegister8(DRV2605_REG_GO):0,searching,unsigned(searchQuery.length()),chatOffset,filesCount,messageActions,messagePath,bool(mutedChannels&(uint32_t(1)<<activeChat)),unsigned(uxTaskGetStackHighWaterMark(nullptr)),radioPowerEditing,nodeScroll);
  else if(s=="chat bubbles"){for(auto &hit:paintedChatMessages)Serial.printf("CHAT_BUBBLE index=%d x=%d y=%d w=%d h=%d mine=%d token=%08lx\n",hit.index,hit.area.x,hit.area.y,hit.area.w,hit.area.h,hit.message.mine,hit.message.token);Serial.println("CHAT_BUBBLES_DONE");}
 
@@ -2295,7 +2319,7 @@ void setup(){
  splash(100,sdReady?"Ready for the field.":sdProblem.c_str());
  if(!sdReady)notice=sdProblem;
  if(welcomePending){Serial.printf("FIRST_BOOT clean=%d sd=%d\n",cleanInstall,sdReady);delay(400);startWelcome();handle("status");return;}
- delay(400);render();handle("status");
+ securityBegin();delay(400);render();handle("status");if(secPin)enterLockMode();
 }
 // LoRa page: who repeated the advert just sent, or that nobody did. Only copies heard back count: a repeater may have
 // taken it and stayed out of reach of this radio.
@@ -2309,7 +2333,7 @@ void loop(){
 #ifdef MM_OFFLINE_ITALIAN
  dictationFileReport();
 #endif
- while(Serial.available()){char c=Serial.read();if((appUsbState||(command.length()==0&&c=='<'))&&appUsbByte(uint8_t(c)))continue;// MeshCore app frame over USB
+ while(Serial.available()){char c=Serial.read();if((appUsbState||(command.length()==0&&c=='<'))&&!usbBlocked()&&appUsbByte(uint8_t(c)))continue;// MeshCore app frame over USB
   if(c=='\n'){
   command.trim();uint32_t request=0;if(command.startsWith("@")){int split=command.indexOf(' ');if(split>1){request=strtoul(command.c_str()+1,nullptr,10);command.remove(0,split+1);}}
   handle(command);command="";if(request)Serial.printf("USB_DONE %lu\n",request);
@@ -2358,7 +2382,7 @@ void loop(){
    device::weatherSetOpen(page||(!deviceLocked&&(homeShowsWeather()||(homeWeatherChosen()&&(screen==Screen::Chats||screen==Screen::Chat)))),page?device::WEATHER_REOPEN_FRESH_MS:device::WEATHER_REFRESH_MS);}device::weatherLoop();device::mapTilesLoop();device::otaLoop(device::wifiConnected(),lastPaint!=0);appLinkLoop();}
  {static uint32_t motionAt=0;if(uint32_t(millis()-motionAt)>=(deviceLocked?100u:20u)){motionAt=millis();device::motionLoop();motionTick();}}
  static uint32_t timeRevision=0;auto clockRevision=device::timeSyncState().revision;if(clockRevision!=timeRevision){timeRevision=clockRevision;lockScreenDirty=true;if(!deviceLocked){markRadioDirty();}}
- appVisibilityLoop();welcomeWifiLoop();radioLinkLoop();toolsTick();pollKeyboard();pollQuickReply();pollLockKey();pollPendingKeys();if(deviceLocked){if(quickReply.active)pollTouch();updateLockScreen();if(refreshTracker.maintenanceDue()&&!quickReply.active&&!lockScreenDirty&&uint32_t(millis()-lastPaint)>=2500&&uint32_t(millis()-lastMaintenanceAt)>=60000){lastMaintenanceAt=millis();forceFullRefresh=true;render();}delay(quickReply.active?5:20);return;}
+ appVisibilityLoop();welcomeWifiLoop();radioLinkLoop();toolsTick();pollKeyboard();pollQuickReply();pollLockKey();pollPendingKeys();if(deviceLocked){if(quickReply.active||pinPadOpen)pollTouch();updateLockScreen();if(refreshTracker.maintenanceDue()&&!quickReply.active&&!pinPadOpen&&!lockScreenDirty&&uint32_t(millis()-lastPaint)>=2500&&uint32_t(millis()-lastMaintenanceAt)>=60000){lastMaintenanceAt=millis();forceFullRefresh=true;render();}delay(quickReply.active||pinPadOpen?5:20);return;}
  // Connectivity / weather / GPS revisions repaint only the pages that draw them; elsewhere only a status-bar icon change counts.
  static uint32_t connectionRevision=0,weatherRevision=0,locationRevision=0,statusSignature=0;auto connection=device::connectivityRevision();auto weather=device::weatherRevision();auto loc=device::locationState();auto location=loc.revision;
  if(connection!=connectionRevision||weather!=weatherRevision||location!=locationRevision){bool weatherData=weather!=weatherRevision&&homeWeatherDataChanged();bool page=(weatherData&&homeShowsWeather())||screen==Screen::Section&&((connection!=connectionRevision&&(section==4||section==14||section==10||section==8||section==11))||(weather!=weatherRevision&&section==10)||(location!=locationRevision&&(section==3||section==9||section==16)));auto c=device::connectivityStatus();uint32_t signature=(c.wifi?1u:0u)|(c.ble&&c.bleReady?2u:0u)|(loc.enabled&&loc.available?4u:0u);connectionRevision=connection;weatherRevision=weather;locationRevision=location;if(page||signature!=statusSignature){statusSignature=signature;markRadioDirty();}}

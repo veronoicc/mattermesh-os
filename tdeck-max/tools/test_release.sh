@@ -9,6 +9,11 @@ for test in services companion_client sd_replace keyboard_layout audio_pcm ringt
   g++ -std=c++17 -O2 -Isrc "sim/test_${test}.cpp" -o "artifacts/release-tests/${test}"
   "artifacts/release-tests/${test}"
 done
+# Lock PIN and Backup / restore: crypto vectors, PIN policy, backup format.
+for test in crypto pin backup; do
+  g++ -std=c++17 -O2 -Isrc "sim/test_${test}.cpp" -o "artifacts/release-tests/${test}"
+  "artifacts/release-tests/${test}"
+done
 bash tools/test_companion_emulator.sh
 for test in chat_clear heard_journal channel_remap journal_tail; do
   g++ -std=c++17 -O2 -Isim/journal-stubs -Isrc "sim/test_${test}.cpp" src/mesh/journal.cpp -o "artifacts/release-tests/${test}"
@@ -30,6 +35,10 @@ g++ -std=c++17 -O2 -Isrc sim/test_notes.cpp -o artifacts/release-tests/notes
 artifacts/release-tests/notes
 g++ "${ui_flags[@]}" sim/test_notes_ui.cpp artifacts/release-tests/components.o artifacts/release-tests/artwork.o artifacts/release-tests/renderer.o artifacts/release-tests/gfx.o artifacts/release-tests/qrcodegen.o -o artifacts/release-tests/notes_ui
 artifacts/release-tests/notes_ui
+for test in security_ui backup_ui; do
+  g++ "${ui_flags[@]}" "sim/test_${test}.cpp" artifacts/release-tests/components.o artifacts/release-tests/artwork.o artifacts/release-tests/renderer.o artifacts/release-tests/gfx.o artifacts/release-tests/qrcodegen.o -o "artifacts/release-tests/${test}"
+  "artifacts/release-tests/${test}"
+done
 # Dictation language: pure policy (ids, SD paths, labels, German UTF-8) and the Sound / dictation page layout.
 g++ -std=c++17 -O2 -Isrc sim/test_dictation_language.cpp -o artifacts/release-tests/dictation_language
 artifacts/release-tests/dictation_language

@@ -41,6 +41,9 @@ public:
  void quickPicker(const State &s);
  void deliveryPage(const State &s);// message Delivery history (62), delivery_renderer.inc
  void scheduledPage(const State &s);// Scheduled app (63), scheduled_renderer.inc
+ void pinPad(const State &s);// PIN pad: over the lock screen, and inside Settings > Security (58)
+ void securityPage(const State &s);// Settings > Security (58)
+ void backupPage(const State &s);// Settings > Backup / restore (59)
  void radioLinkAsk();// over any page: download the companion's messages?
  void cliApp(const State &s);
  void rxLogApp(const State &s);// RX Log (rx_log_renderer.inc)
