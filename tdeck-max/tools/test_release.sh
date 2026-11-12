@@ -25,6 +25,11 @@ for test in degrees lock_wallpaper hold_banner todo_text lora_connectivity gps_s
   g++ "${ui_flags[@]}" "sim/test_${test}.cpp" artifacts/release-tests/components.o artifacts/release-tests/artwork.o artifacts/release-tests/renderer.o artifacts/release-tests/gfx.o artifacts/release-tests/qrcodegen.o -o "artifacts/release-tests/${test}"
   "artifacts/release-tests/${test}"
 done
+# Notes app: checklist parsing and the crash-safe SD store (pure logic), then its pages.
+g++ -std=c++17 -O2 -Isrc sim/test_notes.cpp -o artifacts/release-tests/notes
+artifacts/release-tests/notes
+g++ "${ui_flags[@]}" sim/test_notes_ui.cpp artifacts/release-tests/components.o artifacts/release-tests/artwork.o artifacts/release-tests/renderer.o artifacts/release-tests/gfx.o artifacts/release-tests/qrcodegen.o -o artifacts/release-tests/notes_ui
+artifacts/release-tests/notes_ui
 # Dictation language: pure policy (ids, SD paths, labels, German UTF-8) and the Sound / dictation page layout.
 g++ -std=c++17 -O2 -Isrc sim/test_dictation_language.cpp -o artifacts/release-tests/dictation_language
 artifacts/release-tests/dictation_language

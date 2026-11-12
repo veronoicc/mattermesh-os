@@ -36,6 +36,7 @@ public:
  void tracksPages(const State &s);// Tracks app (49) and Settings > GPS tracks (50)
  void cellularPage(const State &s);// Settings > Cellular (51)
  void smsPage(const State &s);// SMS app (52)
+ void notesPage(const State &s);// Notes app (56)
  void radioLinkAsk();// over any page: download the companion's messages?
  void cliApp(const State &s);
  void rxLogApp(const State &s);// RX Log (rx_log_renderer.inc)

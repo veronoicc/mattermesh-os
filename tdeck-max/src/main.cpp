@@ -64,6 +64,7 @@ extern "C"{
 #include "services/motion.h"
 #include "services/motion_policy.h"
 #include "services/tracks.h"
+#include "services/notes_store.h"
 #include "services/time_sync.h"
 #include "services/time_zone.h"
 #include "services/battery.h"
@@ -183,6 +184,8 @@ void cellularCompose(mm::State &v);bool cellularKey(char c);bool cellularTap(int
 void smsCompose(mm::State &v);bool smsKey(char c);bool smsTap(int x,int y);String *smsField();bool smsBack();bool smsTyping();void smsAppend(const std::string &utf8);void smsOpened();void smsLeft();void smsLoop();// SMS app (sms_app.inc)
 void mapOpen();void mapClose();void routeOpen(const std::string &path,const std::string &sender);void routeClose();bool routeLoading();void routeCompose(mm::State &v);void mapCompose(mm::State &v);void mapPan(int dx,int dy);
 void tracksOpen(int id);void tracksLeft(int next);void tracksCompose(mm::State &v);bool tracksBack();bool tracksKey(char c);bool tracksTap(int x,int y);bool tracksScroll(int dy);void tracksUiLoop();bool tracksSerial(const String &s);// tracks_app.inc
+void notesBegin();void notesOpen();void notesLeft();void notesCompose(mm::State &v);bool notesBack();bool notesKey(char c);bool notesTap(int x,int y);bool notesScroll(int dy);bool notesSerial(const String &s);String *notesField();bool notesTyping();void notesAppend(const std::string &utf8);bool notesDictated(const String &text);bool notesPinned();const char *notesHomeText();bool notesWantPinned();// notes_app.inc
+constexpr int NotesDictation=1000;// dictationChat while dictating into the Notes editor (never a chat slot)
 bool radioPowerEditing=false,radioDevicePage=false;int radioDeviceFocus=0;constexpr int CompanionNameField=matter::RadioFieldCount;String radioPowerInput;
 matter::Config radioDraft;bool radioDraftLoaded=false;int radioEditField=matter::TxPower,radioPresetSelection=-1,radioBandSelection=868;
 bool advertGps=false;// off by default: on, every advert tells the mesh where this T-Deck is
@@ -732,6 +735,7 @@ v.radioRepeat=matter::repeatEnabled();
  if(!deviceLocked&&screen==Screen::Section&&mm::toolsSection(section))toolsCompose(v);
  if(!deviceLocked&&screen==Screen::Section&&(section==mm::RadioLinkSection||section==mm::RadioLinkSettingsSection||section==19))radioLinkCompose(v);if(!deviceLocked&&screen==Screen::Section&&(section==19||section==mm::WebAppSection))webCompose(v);/* Settings: the MatterMesh Web row *//* Settings: the Companion link row status */
  tracksCompose(v);// the REC pill, the Settings row, the Tracks pages
+if(!deviceLocked&&screen==Screen::Section&&section==mm::NotesSection)notesCompose(v);// the Notes app
 if(!deviceLocked&&screen==Screen::Section&&(section==mm::CellularSection||section==19))cellularCompose(v);if(!deviceLocked&&screen==Screen::Section&&section==mm::SmsSection)smsCompose(v);/* Settings: the Cellular row status */
 if(!deviceLocked&&screen==Screen::Section&&section==mm::SelfTestSection)selfTestCompose(v);
  v.homeWidget=homeWidget;v.homeWidgetFocus=homeWidgetFocus;v.homeMain=homeMain;v.homeMainFocus=homeMainFocus;v.homeWidgetsRow=homeWidgetsRow;// Settings shows the choices on its Home widgets rows
@@ -821,6 +825,7 @@ static void fillMainWidget(mm::State &v){
  if(id==mm::MainPosition){m.hdopHundredths=device::locationHdop();if(d.position){m.utm=mm_home::utm(d.latitude,d.longitude);m.spokenLat=mm_home::spoken(d.latitude,true);m.spokenLon=mm_home::spoken(d.longitude,false);}}
  if(id==mm::MainElevation){for(int i=0;i<altitudeTrack.count;i++)m.elevation.push_back(altitudeTrack.at(i));m.climb=altitudeTrack.climb;if(altitudeTrack.count&&altitudeTrack.epochAt(0))m.elevationFrom=messageTime(altitudeTrack.epochAt(0)).c_str();}
  if(id==mm::MainNote)m.note=noteText.c_str();
+ if(id==mm::MainNote&&notesPinned())m.note=notesHomeText();// the pinned note of the Notes app is the Home note
 }
 void renderHome(){auto v=uiState();mm::Renderer renderer(frame);renderer.home(v);
  // Touch / long-press targets as painted: the Timeline rows, or the chat cards.
@@ -849,6 +854,7 @@ mm::Page sectionPage(int id){
  if(id==mm::TracksAppSection)return mm::Page::TracksApp;if(id==mm::TracksSection)return mm::Page::TracksSettings;
  if(id==mm::CellularSection)return mm::Page::Cellular;if(id==mm::SmsSection)return mm::Page::Sms;
  if(id==mm::SelfTestSection)return mm::Page::SelfTest;
+ if(id==mm::NotesSection)return mm::Page::Notes;
  switch(id){case mm::WebAppSection:return mm::Page::WebApp;case mm::DmPathSection:return mm::Page::DmPath;case mm::RadioLinkSection:return mm::Page::RadioLink;case mm::RadioLinkSettingsSection:return mm::Page::RadioLinkSettings;case 1:return mm::Page::Mesh;case 2:return mm::Page::Radio;case 3:return mm::Page::GPS;case 4:return mm::Page::Wifi;case 5:return mm::Page::Battery;case 6:return mm::Page::Controls;case 7:return mm::Page::Files;case 8:return mm::Page::Info;case 9:return mm::Page::Maps;case 10:return mm::Page::Weather;case 11:return mm::Page::Terminal;case 14:return mm::Page::Bluetooth;case 16:return mm::Page::DateTime;case 17:return mm::Page::Updates;case mm::QuickSettingsSection:return mm::Page::QuickSettings;case 19:return mm::Page::Settings;case 20:return mm::Page::Power;case 21:return mm::Page::Audio;case 22:return mm::Page::Wallpaper;case mm::KeyboardSection:return mm::Page::Keyboard;case 23:return mm::Page::Antenna;case mm::AccentKeySection:return mm::Page::AccentKey;case mm::HomeWidgetsSection:return mm::Page::HomeWidgets;case mm::BesideClockSection:return mm::Page::BesideClock;case mm::MainAreaSection:return mm::Page::MainArea;case mm::NoteSection:return mm::Page::Note;case 24:return mm::Page::Storage;case mm::CliSection:return mm::Page::Cli;case mm::RxLogSection:return mm::Page::RxLog;case mm::NoiseFloorSection:return mm::Page::NoiseFloor;case mm::RptScannerSection:return mm::Page::RptScanner;case mm::SupportSection:return mm::Page::Support;default:return mm::Page::Info;}
 }
 void renderSection(){
@@ -857,6 +863,8 @@ void renderSection(){
  if(section==7){v.scroll=filesScroll;if(sdReady){static std::vector<std::string> cache;static uint32_t cachedAt=0;if(cache.empty()||uint32_t(millis()-cachedAt)>=5000){cache.clear();File dir=SD.open("/");while(cache.size()<64){File f=dir.openNextFile();if(!f)break;cache.push_back(std::string(f.isDirectory()?"[DIR] ":"")+f.name());f.close();}dir.close();
   // GPX exports of the Tracks app, listed as "tracks/<name>.gpx" after the card's root.
   File tdir=SD.open("/mattermesh/tracks");if(tdir&&tdir.isDirectory())while(cache.size()<96){File f=tdir.openNextFile();if(!f)break;std::string n=f.name();n=n.substr(n.rfind('/')+1);if(!f.isDirectory()&&n.size()>4&&n.compare(n.size()-4,4,".gpx")==0)cache.push_back("tracks/"+n);f.close();}if(tdir)tdir.close();
+  // Notes of the Notes app, listed as "notes/<name>.txt".
+  File ndir=SD.open("/mattermesh/notes");if(ndir&&ndir.isDirectory())while(cache.size()<128){File f=ndir.openNextFile();if(!f)break;std::string n=f.name();n=n.substr(n.rfind('/')+1);if(!f.isDirectory()&&n.size()>4&&n.compare(n.size()-4,4,".txt")==0)cache.push_back("notes/"+n);f.close();}if(ndir)ndir.close();
   cachedAt=millis();}v.files=cache;}filesCount=v.files.size();}
  // Home widgets: the whole Home drawn first and kept at half size (a pixel black when 2 of its 4 are), then copied
  // into the page's frame.
@@ -880,6 +888,7 @@ void confirmShutdown(){
 }
 void loadRadioDraft(bool keepSelection);
 void openSection(int id,bool paint){
+ if(id==mm::NoteSection&&notesWantPinned())id=mm::NotesSection;// while a note is pinned, the Home note opens it in the Notes app
  wifiSavedOpen=false;wifiForgetArmed=-1;
  if(id==mm::SmsSection)smsOpened();
  cancelDictation();
@@ -889,6 +898,7 @@ void openSection(int id,bool paint){
  section=constrain(id,0,mm::MaxSection);notice="";if(section==mm::BesideClockSection)homeWidgetFocus=homeWidget;if(section==mm::MainAreaSection)homeMainFocus=homeMain;if(section==mm::NoteSection)noteInput=noteText;if(section==1){contactPopupsClose();contactSearching=false;contactQuery="";contactFocus=nodeScroll=0;}if(section==22)wallpaperFocus=lockWallpaper;if(section==mm::KeyboardSection){kbdQuery="";kbdSearching=false;kbdFocus=0;}if(section==mm::AccentKeySection)accentFocus=accentMode;if(section==9)mapOpen();if(mm::toolsSection(section))toolsOpen(section);
  if(section==mm::TracksAppSection||section==mm::TracksSection)tracksOpen(section);
  if(section==mm::SelfTestSection)selfTestOpen();
+ if(section==mm::NotesSection)notesOpen();
  radioPowerEditing=false;radioDevicePage=false;radioDeviceFocus=0;if(section==2)loadRadioDraft(false);
  if(section==0){searching=false;searchQuery="";messagesMenu=false;chatsParent=screen==Screen::Launcher?Screen::Launcher:Screen::Home;screen=Screen::Chats;}
  else {sectionParent=screen==Screen::Launcher?Screen::Launcher:Screen::Home;screen=Screen::Section;}
@@ -926,7 +936,7 @@ int topBannerClearTo(){
  if(section==1||section==2)return mm::LoRaTabY+mm::LoRaTabH;if(section==9)return mm::MapBackFloat.y+mm::MapBackFloat.h;return mm::Top-1;}
 void render(int batteryPreview) {
  if(!deviceLocked&&screen==Screen::Chat&&sdReady)archivePager.ensure(radioJournal,activeChat,chatOffset);
- if(dictationChat>=0&&(screen!=Screen::Chat||activeChat!=dictationChat||chatOverlayOpen()))cancelDictation();
+ if(dictationChat>=0&&(dictationChat==NotesDictation?!notesTyping():(screen!=Screen::Chat||activeChat!=dictationChat||chatOverlayOpen())))cancelDictation();
  if(screen!=Screen::Chat&&input.length())chatDrafts.leave(activeChat,input);if(!input.length())composerExpanded=false;
  if(batchingInput){repaintNow();return;}
  // Notification feedback (keyboard flash, vibration) keeps running from the display busy callback, so the frame is painted together with it.
@@ -1062,6 +1072,7 @@ void back() {
  if(screen==Screen::Section&&section==mm::SelfTestSection&&selfTestBack())return;
  if(tracksBack())return;
  if(screen==Screen::Section&&section==mm::SmsSection&&smsBack())return;
+ if(notesBack())return;
  if(dmPathBack())return;
  if(screen==Screen::Section&&section==1&&(contactMenu||contactDialog)){contactPopupsClose();render();return;}
  if(channelOptions){if(channelKeyView)closeChannelKey();else if(deleteChannelConfirm)deleteChannelConfirm=false;else{channelOptions=false;channelOptionTarget=-1;}notice="";render();return;}
@@ -1124,6 +1135,7 @@ String *editableField(){
  if(screen==Screen::Section&&(section==mm::RadioLinkSection||section==mm::RadioLinkSettingsSection))return radioLinkField();
  if(screen==Screen::Section&&section==mm::CellularSection)return cellularField();
  if(screen==Screen::Section&&section==mm::SmsSection)return smsField();
+ if(screen==Screen::Section&&section==mm::NotesSection)return notesField();
  if(screen==Screen::NewChat){if(formField==1)return newForm==int(mm::ChannelForm::JoinPrivate)?&newKey:nullptr;return formField==0?&newName:&newScope;}
  if(screen==Screen::Section){if(mm::toolsSection(section))return toolsField();if(section==2&&radioPowerEditing)return &radioPowerInput;if(section==4&&wifiEditing)return wifiEditField==0?&wifiTarget:&wifiPassword;}
  return nullptr;
@@ -1140,6 +1152,7 @@ String *editableField(){
 #include "rx_log_app.inc"
 #include "noise_app.inc"
 #include "rpt_app.inc"
+#include "notes_app.inc"
 // The tools hooks: the CLI.
 void toolsOpen(int id){notice="";if(id==mm::CliSection)cliOpen();else if(id==mm::RxLogSection)rxLogOpen();else if(id==mm::NoiseFloorSection)noiseOpen();else if(id==mm::RptScannerSection)rptOpen();}
 void toolsClose(int id){if(id==mm::CliSection)cliClose();else if(id==mm::RxLogSection)rxLogClose();else if(id==mm::NoiseFloorSection)noiseClose();else if(id==mm::RptScannerSection)rptClose();}
@@ -1173,6 +1186,7 @@ void appVisibilityLoop(){
   if(previous==mm::SelfTestSection)selfTestLeft();
   if(previous==9)mapClose();else if(previous==4)wifiPageLeft();else if(previous==14){bleNameEditing=false;bleNameInput="";}else if(mm::toolsSection(previous))toolsClose(previous);
   if(previous==mm::TracksAppSection)tracksLeft(now);
+  if(previous==mm::NotesSection)notesLeft();
   }
  int scene=deviceLocked?-1:int(screen);
  if(scene!=visibleScene){int previous=visibleScene;visibleScene=scene;
@@ -1294,6 +1308,7 @@ void key(char c) {
  if(c!='\b'&&tracksKey(c))return;
  if(c!='\b'&&cellularKey(c))return;
  if(c!='\b'&&smsKey(c))return;
+ if(c!='\b'&&notesKey(c))return;
  if(screen==Screen::Section&&mm::toolsSection(section)&&toolsKey(c))return;
  if(screen==Screen::Section&&section==mm::SelfTestSection&&selfTestKey(c))return;
  if(c!='\b'&&radioLinkKey(c))return;
@@ -1521,6 +1536,7 @@ void tap(int x,int y) {
   if(smsTap(x,y))return;
   if(webTap(x,y))return;
  if(tracksTap(x,y))return;
+ if(notesTap(x,y))return;
   if(dmPathTap(x,y))return;
   if(section==mm::QuickSettingsSection&&shutdownConfirm){quickSettingsTap(x,y);return;}
   if(section==9){mapTap(x,y);return;}// full-page map: its own floating back button
@@ -1653,6 +1669,7 @@ void swipe(int dy) {if(deviceLocked||screen==Screen::Welcome||radioLinkAsking())
  if(screen==Screen::Section){
   if(section==mm::DmPathSection){dmPathScroll(dy<0?mm::DmPathRows:-mm::DmPathRows);return;}
   if(tracksScroll(dy))return;
+  if(notesScroll(dy))return;
   if(mm::toolsSection(section)){toolsScroll(dy);return;}
   if(section==mm::SelfTestSection){selfTestScroll(dy);return;}
   if(section==mm::KeyboardSection){int count=int(keyboardLanguageRows().size());kbdFocus=constrain(kbdFocus+(dy<0?mm::KeyboardRows:-mm::KeyboardRows),0,max(0,count-1));render();return;}
@@ -1691,10 +1708,11 @@ void loadAccentMode(){accentMode=constrain(device::prefGetInt("mmui","accent",2)
 bool setAccentMode(int mode){if(mode<0||mode>2)return false;if(!device::prefPutInt("mmui","accent",mode))return false;accentMode=mode;accentTaps=0;accentTyped=false;return true;}
 void accentKey(bool pressed){if(pressed){if(deviceLocked)quickReplyInputAt=millis();accentTaps=accentTaps>=4?0:accentTaps+1;accentTyped=false;}else if(accentTyped){accentTaps=0;accentTyped=false;}if(deviceLocked)lockScreenDirty=true;else repaintSettled();}
 // Language letters go to the message composer and the lock-screen quick reply; menus keep the plain keys.
-static bool typingMessage(){return smsTyping()||(deviceLocked?quickReply.active:!deviceLocked&&screen==Screen::Chat&&!emojiPicker&&editableField()==&input);}
+static bool typingMessage(){return smsTyping()||notesTyping()||(deviceLocked?quickReply.active:!deviceLocked&&screen==Screen::Chat&&!emojiPicker&&editableField()==&input);}
 static void typeText(const std::string &text){
  device::activity();
  if(smsTyping()){smsAppend(text);repaintSettled();return;}
+ if(notesTyping()){notesAppend(text);return;}
  if(deviceLocked){quickReply.appendText(text);quickReplyInputAt=millis();lockScreenDirty=true;return;}
  if(input.length()+text.size()<=messageByteLimit()){inputInsert(String(text.c_str()));notice="";}else notice=matter::messageLimitError(messageByteLimit()).c_str();
  repaintSettled();
@@ -1748,7 +1766,8 @@ void cancelDictation(){if(dictationChat>=0){if(dictationChat<MAX_CHATS&&(screen!
 void micInput(device::MicSource source,bool pressed){
  if(!pressed){if(dictationHold.release(source))device::audioStop();repaintNow();return;}
  if(!dictationHold.press(source))return;
- if(deviceLocked||screen!=Screen::Chat||chatOverlayOpen()){notice="Open a chat to dictate";dirty=true;return;}
+ if(!deviceLocked&&notesTyping()){if(device::audioState().busy){notice="Audio busy / wait or cancel";dirty=true;return;}if(device::audioRecord())dictationChat=NotesDictation;notice=device::audioState().message;repaintNow();return;}
+ if(deviceLocked||screen!=Screen::Chat||chatOverlayOpen()){notice="Open a chat or a note to dictate";dirty=true;return;}
  if(device::audioState().busy){notice="Audio busy / wait or cancel";dirty=true;return;}
  if(device::audioRecord()){dictationChat=activeChat;dictationDraft=input;}
  notice=device::audioState().message;repaintNow();
@@ -2057,6 +2076,7 @@ void handle(const String &s) {
  if(mqttDlSerial(s))return;
  if(webSerial(s))return;
  if(tracksSerial(s))return;
+ if(notesSerial(s))return;
  if(s=="channel menu status"){auto gps=device::locationState();bool valid=!device::gpsCoordinateMessage(gps.available,gps.enabled,gps.fix,gps.fixAgeMs,gps.latitude,gps.longitude).empty();Serial.printf("CHANNEL_MENU_STATUS key_view=%d qr_size=%d key_chars=%u count=%d open=%d target=%d muted=%d delete_confirm=%d position=%d position_ready=%d\n",channelKeyView,channelQrSize,channelKeyHex.length(),chatCount,channelOptions,channelOptionTarget,channelOptionTarget>=0&&channelOptionTarget<chatCount&&bool(mutedChannels&(uint32_t(1)<<channelOptionTarget)),deleteChannelConfirm,positionShare,valid);return;}
  if(s=="channel list"){DynamicJsonDocument json(8192);// 32 conversations
  auto list=json.to<JsonArray>();for(int i=0;i<chatCount;i++){auto entry=list.createNestedObject();entry["id"]=i;entry["name"]=chats[i].name;entry["direct"]=chats[i].direct;entry["muted"]=bool(mutedChannels&(uint32_t(1)<<i));entry["ready"]=channelReady[i];entry["peer_bound"]=!peerKeys[i].isEmpty();}Serial.print("CHANNEL_LIST ");serializeJson(json,Serial);Serial.println();return;}
@@ -2233,6 +2253,7 @@ void setup(){
  if(!sdReady){sdProblem=sdDiagnose();Serial.printf("BOOT_SD problem=%s\n",sdProblem.c_str());}
  device::mapTilesBegin(SD,sdReady);
  loadLights();device::powerBegin(displayBrightness,keyboardBrightness);loadChats();loadRegionScopes();loadChannelNotifications();loadVibrations();loadKeyboardLanguages();loadAccentMode();loadWallpaper();loadHomeWidget();loadHomeMain();
+ notesBegin();
  advertGps=device::prefGetInt("mmadvert","gps",0)!=0;
  device::audioBegin(expander,expanderReady);
  device::motionBegin(expander,expanderReady);
@@ -2278,7 +2299,7 @@ void loop(){
   if(!deviceLocked&&screen==Screen::Section&&(section==17||section==19)){markRadioDirty();}
   if(o.phase==device::OtaPhase::Available&&o.code!=otaAnnounced&&!hidden){otaAnnounced=o.code;otaBannerText=std::string("MatterMesh ")+o.version.c_str()+" is ready: tap to open";otaBannerUntil=millis()+6000;if(!(screen==Screen::Section&&section==17)){repaintNow();}else otaBannerUntil=0;}/* found while locked or typing: shown once the card can be */}
   if(otaBannerUntil&&int32_t(otaBannerUntil-millis())<=0){otaBannerUntil=0;if(!deviceLocked){repaintNow();}}}
- static uint32_t audioRevision=0;auto nextAudioRevision=device::audioRevision();if(nextAudioRevision!=audioRevision){audioRevision=nextAudioRevision;auto audio=device::audioState();if(!deviceLocked){bool visibleAudio=(screen==Screen::Section&&section==21)||dictationChat>=0;if(visibleAudio){notice=audio.message;if(screen==Screen::Chat&&!audio.busy){chatToast(audio.message,6000);}repaintSettled();}String dictated;if(device::takeTranscript(dictated)&&screen==Screen::Chat&&activeChat==dictationChat){bool trimmed=false;input=device::appendDictation(input.c_str(),dictated.c_str(),messageByteLimit(),trimmed).c_str();composerExpanded=true;if(trimmed)notice=(String("Dictation trimmed / ")+String(messageByteLimit())+"-byte limit");}if(!audio.busy){if(dictationChat>=0)device::activity();dictationChat=-1;dictationDraft="";}}}
+ static uint32_t audioRevision=0;auto nextAudioRevision=device::audioRevision();if(nextAudioRevision!=audioRevision){audioRevision=nextAudioRevision;auto audio=device::audioState();if(!deviceLocked){bool visibleAudio=(screen==Screen::Section&&section==21)||dictationChat>=0;if(visibleAudio){notice=audio.message;if(screen==Screen::Chat&&!audio.busy){chatToast(audio.message,6000);}repaintSettled();}String dictated;if(device::takeTranscript(dictated)&&dictationChat==NotesDictation)notesDictated(dictated);else if(dictated.length()&&screen==Screen::Chat&&activeChat==dictationChat){bool trimmed=false;input=device::appendDictation(input.c_str(),dictated.c_str(),messageByteLimit(),trimmed).c_str();composerExpanded=true;if(trimmed)notice=(String("Dictation trimmed / ")+String(messageByteLimit())+"-byte limit");}if(!audio.busy){if(dictationChat>=0)device::activity();dictationChat=-1;dictationDraft="";}}}
  // Recording counter 0..6 s: repaint the composer once per elapsed second.
  // (the full audio state, Strings included, is copied only while a dictation chat is open)
  static int paintedAudioSeconds=-1;{int seconds=-1;if(!deviceLocked&&screen==Screen::Chat&&dictationChat>=0){auto audio=device::audioState();if(audio.recording)seconds=audio.warming?-2:std::min<int>(device::DICTATION_MAX_SECONDS,audio.samples/device::DICTATION_RATE);}

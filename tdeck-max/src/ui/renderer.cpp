@@ -1016,10 +1016,12 @@ void Renderer::section(const State &s){
 #include "cellular_renderer.inc"
 #include "sms_renderer.inc"
 #include "selftest_renderer.inc"
+#include "notes_renderer.inc"
 void Renderer::radioLinkAsk(){Rect panel=overlayPanel();c.text(Margin+8,Top+15,"Companion connected",Font::ChatTitle,FG,panel.w-16);c.text(Margin+8,Top+50,"Download the messages",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+66,"from the companion?",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+90,"No: they stay on it,",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+106,"new ones too.",Font::ChatMeta,FG,panel.w-16);c.button(RadioLinkAskNo,"NO");c.button(RadioLinkAskYes,"YES",true);}
 
 void Renderer::draw(const State &s){switch(s.page){
  case Page::SelfTest:selfTestApp(s);break;
  case Page::RadioLink:case Page::RadioLinkSettings:case Page::WebApp:radioLinkPages(s);break;case Page::TracksApp:case Page::TracksSettings:tracksPages(s);break;case Page::DmPath:dmPathPage(s);break;case Page::Cli:cliApp(s);break;case Page::RxLog:rxLogApp(s);break;case Page::NoiseFloor:noiseApp(s);break;case Page::RptScanner:rptApp(s);break;case Page::Cellular:cellularPage(s);break;case Page::Sms:smsPage(s);break;
+ case Page::Notes:notesPage(s);break;
  case Page::Home:home(s);break;case Page::Launcher:launcher(s);break;case Page::Messages:messages(s);break;case Page::Chat:chat(s);break;case Page::NewChat:form(s);break;case Page::ContactPicker:contactPicker(s);break;case Page::Settings:settings(s);break;case Page::QuickSettings:quickSettings(s);break;default:section(s);}if(s.channelOptions)channelOptions(s);}
 }
