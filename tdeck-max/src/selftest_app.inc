@@ -82,7 +82,8 @@ static sft::Outcome sfCodecCheck(sft::Phase p,uint32_t){
  if(p==sft::Phase::Abort)return {};
  auto a=device::audioState();if(!a.ready)return sft::fail("ES8311 not initialised: "+std::string(a.message.c_str()));
  if(a.busy)return {};// the codec is in use: its registers are read when it is free
- uint8_t id[2];if(!sfRead(BOARD_I2C_ADDR_ES8311,0xFD,id,2))return sft::fail("ES8311 does not answer at 0x18");
+ uint8_t id[2];// one read per register: the ES8311 does not auto-increment, a 2-byte burst from 0xFD returns FF as the second byte
+ if(!sfRead(BOARD_I2C_ADDR_ES8311,0xFD,id,1)||!sfRead(BOARD_I2C_ADDR_ES8311,0xFE,id+1,1))return sft::fail("ES8311 does not answer at 0x18");
  return id[0]==0x83&&id[1]==0x11?sft::pass("ES8311 at 0x18, chip id 83 11"):sft::fail(sfFmt("unexpected chip id %02x %02x",id[0],id[1]));
 }
 static sft::Outcome sfSpeakerCheck(sft::Phase p,uint32_t){
