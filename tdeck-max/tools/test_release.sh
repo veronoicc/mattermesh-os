@@ -14,6 +14,11 @@ for test in crypto pin backup; do
   g++ -std=c++17 -O2 -Isrc "sim/test_${test}.cpp" -o "artifacts/release-tests/${test}"
   "artifacts/release-tests/${test}"
 done
+# Sleep policy, battery history / drain math and the power profile table.
+for test in sleep_policy battery_math power_profile; do
+  g++ -std=c++17 -O2 -Isrc "sim/test_${test}.cpp" -o "artifacts/release-tests/${test}"
+  "artifacts/release-tests/${test}"
+done
 bash tools/test_companion_emulator.sh
 for test in chat_clear heard_journal channel_remap journal_tail; do
   g++ -std=c++17 -O2 -Isim/journal-stubs -Isrc "sim/test_${test}.cpp" src/mesh/journal.cpp -o "artifacts/release-tests/${test}"
@@ -26,7 +31,7 @@ g++ "${ui_flags[@]}" -c src/ui/artwork.cpp -o artifacts/release-tests/artwork.o
 g++ "${ui_flags[@]}" -c src/ui/renderer.cpp -o artifacts/release-tests/renderer.o
 g++ "${ui_flags[@]}" -c 'hardware/lib/Adafruit GFX Library/Adafruit_GFX.cpp' -o artifacts/release-tests/gfx.o
 gcc -O2 -c src/qr/qrcodegen.c -o artifacts/release-tests/qrcodegen.o
-for test in degrees lock_wallpaper hold_banner todo_text lora_connectivity gps_settings_ui menu_status_lock chat_scopes_unlock channel_gps motion_settings_ui rx_log_ui noise_ui rpt_ui tracks_ui cellular_ui sms_ui selftest_ui; do
+for test in degrees lock_wallpaper hold_banner todo_text lora_connectivity gps_settings_ui menu_status_lock chat_scopes_unlock channel_gps motion_settings_ui rx_log_ui noise_ui rpt_ui tracks_ui cellular_ui sms_ui selftest_ui power_ui; do
   g++ "${ui_flags[@]}" "sim/test_${test}.cpp" artifacts/release-tests/components.o artifacts/release-tests/artwork.o artifacts/release-tests/renderer.o artifacts/release-tests/gfx.o artifacts/release-tests/qrcodegen.o -o "artifacts/release-tests/${test}"
   "artifacts/release-tests/${test}"
 done

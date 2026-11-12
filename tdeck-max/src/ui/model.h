@@ -18,9 +18,10 @@
 #include "scheduled_layout.h"
 #include "security_layout.h"
 #include "backup_layout.h"
+#include "power_layout.h"
 namespace mm {
 enum class WeatherPhaseView {Closed,WifiOff,Connecting,NoNetwork,WaitingClock,Locating,Fetching,Ready,Error};
-enum class Page { Home,Launcher,Messages,Chat,NewChat,Settings,Controls,Mesh,Radio,GPS,Maps,Weather,Info,Files,Wifi,Bluetooth,Terminal,DateTime,Updates,Battery,Power,Audio,Wallpaper,Antenna,Storage,QuickSettings,Cli,ContactPicker,Support,Keyboard,AccentKey,HomeWidgets,BesideClock,MainArea,Note,DmPath,RadioLink,RadioLinkSettings,WebApp,Motion,RxLog,NoiseFloor,RptScanner,TracksApp,TracksSettings,Cellular,Sms,SelfTest,Notes,QuickMessages,Delivery,Scheduled,Security,Backup};
+enum class Page { Home,Launcher,Messages,Chat,NewChat,Settings,Controls,Mesh,Radio,GPS,Maps,Weather,Info,Files,Wifi,Bluetooth,Terminal,DateTime,Updates,Battery,Power,Audio,Wallpaper,Antenna,Storage,QuickSettings,Cli,ContactPicker,Support,Keyboard,AccentKey,HomeWidgets,BesideClock,MainArea,Note,DmPath,RadioLink,RadioLinkSettings,WebApp,Motion,RxLog,NoiseFloor,RptScanner,TracksApp,TracksSettings,Cellular,Sms,SelfTest,Notes,QuickMessages,Delivery,Scheduled,Security,Backup,PowerProfile};
 struct Conversation { std::string name,scope,preview,time="--:--",sender,age="--";bool direct=false;int id=0,unread=0,activity=0; };
 struct Message {std::string sender,time,body,meta;bool mine;std::string path,heard,scope;int hops=-1;uint32_t token=0;int repeaters=-1;Message(std::string s="",std::string t="",std::string b="",std::string m="",bool own=false):sender(std::move(s)),time(std::move(t)),body(std::move(b)),meta(std::move(m)),mine(own){} };
 struct ContactRow {std::string name,detail;};
@@ -72,6 +73,7 @@ int dictationLanguage=2;uint32_t dictationModelBytes=0;// Sound / dictation: sel
  WeatherPhaseView weatherPhase=WeatherPhaseView::Closed;int weatherHours=0;float apparent=0;int weatherHourCode[4]={};float weatherHourTemp[4]={};std::string weatherHourTime[4];
  uint32_t displayTimeout=30,keyboardTimeout=30;int powerField=0;int wallpaper=0,wallpaperFocus=0;std::string kbdQuery;bool kbdSearching=false;int kbdFocus=0,kbdLang=0;uint32_t kbdMask=1;int accentMode=2,accentFocus=2,accentTaps=0;// lock-screen wallpaper (mm_wallpaper::list index) and the focused card on its page
 bool batteryEstimated=false,batteryCharging=false,batteryFull=false;
+ PowerView pw;// Power / timeouts, Battery and Power profile pages (power_app.inc); powerField is the focus row of Power / timeouts
 
  std::string meshCoreVersion=MM_MESHCORE_VERSION;
  std::string messageTone="Classic",mentionTone="Rising",messageVibration="Single",mentionVibration="Double";

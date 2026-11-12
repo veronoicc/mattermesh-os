@@ -150,8 +150,6 @@ inline Rect fileRowRect(int row){return {Margin,FileListY+row*FileRowH,W-2*Margi
 constexpr int WallpaperCardCount=3,WallpaperThumbScale=5,WallpaperThumbW=48,WallpaperThumbH=60;
 inline Rect wallpaperCardRect(int index){return {Margin+index*76,Top+20,72,68};}
 constexpr int WallpaperInfoY=Top+100;
-inline Rect powerRowRect(int index){return {Margin,Top+22+index*47,W-2*Margin,43};}
-inline Rect timeoutOptionRect(int index){return {Margin+index*38,Top+138,34,28};}
 // Sound page: switch, volume row (- slider +), message / mention ringtone rows, dictation card (engine, < language >, model on SD).
 constexpr Rect AudioNotify=SettingsSwitch,AudioMinus={Margin,Top+70,36,28},AudioSlider={Margin+42,Top+70,W-2*Margin-84,28},AudioPlus={W-Margin-36,Top+70,36,28};
 constexpr Rect AudioToneMessage={Margin,Top+120,W-2*Margin,36},AudioToneMention={Margin,Top+158,W-2*Margin,36};

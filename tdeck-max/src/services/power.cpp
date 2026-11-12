@@ -1,4 +1,5 @@
 #include "power.h"
+#include "sleep.h"
 #include <Preferences.h>
 #include <TDeckMaxBoard.h>
 namespace device {
@@ -7,7 +8,7 @@ static bool hold=false;static uint32_t holdUntil=0;constexpr uint32_t HOLD_TAIL_
 constexpr uint8_t NOTIFICATION_PWM=191;constexpr uint32_t FLASH_ON_MS=160,FLASH_OFF_MS=140;static Preferences preferences;static PowerState state;static uint8_t displayBrightness=100,keyboardBrightness=180;
 static void apply(){uint8_t display=state.displayEnabled&&((!locked&&state.displayAwake)||(locked&&unlockPreview))?displayBrightness:0,keyboard=state.keyboardEnabled&&((!locked&&state.keyboardAwake)||(locked&&unlockPreview))?keyboardBrightness:0;if(flashPhase>=0)keyboard=(flashPhase%2==0)?NOTIFICATION_PWM:0;if(display!=state.displayPWM){analogWrite(BOARD_EPD_BL,display);state.displayPWM=display;}if(keyboard!=state.keyboardPWM){analogWrite(BOARD_KEYBOARD_LED,keyboard);state.keyboardPWM=keyboard;}}
 void powerBegin(uint8_t display,uint8_t keyboard){preferences.begin("mmpower",false);state.displaySeconds=preferences.getUInt("display",30);state.keyboardSeconds=preferences.getUInt("keyboard",30);if(!validTimeout(state.displaySeconds))state.displaySeconds=30;if(!validTimeout(state.keyboardSeconds))state.keyboardSeconds=30;if(preferences.getUInt("display",0)!=state.displaySeconds)preferences.putUInt("display",state.displaySeconds);if(preferences.getUInt("keyboard",0)!=state.keyboardSeconds)preferences.putUInt("keyboard",state.keyboardSeconds);/* only a reset invalid value is written back at boot */state.displayEnabled=preferences.getBool("display_on",true);state.keyboardEnabled=preferences.getBool("keyboard_on",true);displayBrightness=display;keyboardBrightness=keyboard;state.displayPWM=255;state.keyboardPWM=255;activity();}
-void powerLocked(bool value){locked=value;unlockPreview=false;if(!locked)activity();else apply();}
+void powerLocked(bool value){sleepNoteActivity();locked=value;unlockPreview=false;if(!locked)activity();else apply();}
 void unlockLightPreview(bool active){unlockPreview=locked&&active;apply();}
 void activity(){if(locked)return;state.lastActivity=millis();state.displayAwake=state.keyboardAwake=true;apply();}
 void brightness(uint8_t display,uint8_t keyboard){displayBrightness=display;keyboardBrightness=keyboard;apply();}

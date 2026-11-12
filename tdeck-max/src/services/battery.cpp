@@ -1,4 +1,5 @@
 #include "battery.h"
+#include "battery_math.h"
 #include <Arduino.h>
 #include <Wire.h>
 #include <TDeckMaxBoard.h>
@@ -20,4 +21,12 @@ bool batteryCalibrateFull(){
  int measured=(sum+2)/5;if(calibration.putInt("full_mv",measured)!=sizeof(int32_t))return false;fullMillivolts=measured;state.voltage=measured;state.full=true;state.percent=100;state.estimated=false;return true;
 }
 BatteryState batteryState(){return state;}
+static BatteryGauge gauge;static uint32_t gaugeAt=0;
+void batteryGaugeLoop(){if(gaugeAt&&millis()-gaugeAt<10000)return;gaugeAt=millis()|1;BatteryGauge g;uint8_t b[2];
+ if(read(BOARD_I2C_ADDR_BQ27220,0x0c,b,2)){g.currentMa=int16_t(b[0]|(b[1]<<8));g.valid=true;}
+ if(read(BOARD_I2C_ADDR_BQ27220,0x14,b,2))g.avgMa=int16_t(b[0]|(b[1]<<8));
+ if(read(BOARD_I2C_ADDR_BQ27220,0x16,b,2))g.tteMin=gaugeMinutes(uint16_t(b[0]|(b[1]<<8)));
+ if(read(BOARD_I2C_ADDR_BQ27220,0x18,b,2))g.ttfMin=gaugeMinutes(uint16_t(b[0]|(b[1]<<8)));
+ gauge=g;}
+BatteryGauge batteryGauge(){return gauge;}
 }

@@ -291,6 +291,7 @@ RadioDiag radioDiag(){RadioDiag d;d.tcxo=tcxoVoltage;d.noiseFloor=driver.getNois
 RssiSample radioSampleRssi(float &dbm,int &floorDbm){floorDbm=state.ready?driver.getNoiseFloor():0;if(!state.ready)return RssiSample::Offline;if(state.suspended)return RssiSample::Suspended;if(state.tx||!driver.isInRecvMode()||driver.isReceivingPacket())return RssiSample::Busy;dbm=driver.getCurrentRSSI();return RssiSample::Ok;}
 bool radioClearErrors(){return state.ready&&!state.suspended&&radio.clearDeviceErrors()==RADIOLIB_ERR_NONE;}
 RadioCounters radioCounters(){RadioCounters c;c.ready=state.ready;c.received=driver.getPacketsRecv();c.sent=driver.getPacketsSent();return c;}// no Config copy (the node name String)
+uint32_t txAirtimeMs(){return meshPtr?uint32_t(chatMesh().getTotalAirTime()):0;}
 Snapshot snapshot(){state.nodes=meshPtr?chatMesh().getNumContacts():0;state.received=driver.getPacketsRecv();state.sent=driver.getPacketsSent();state.errors=driver.getPacketsRecvErrors();state.rx=state.ready&&!state.suspended&&driver.isInRecvMode();state.queued=pool.getOutboundTotal();return state;} // rssi/snr are captured in logRx, no SPI reads per poll
 static Node toNode(const CachedNode &n){Node node;node.key=n.key;node.name=n.name;node.type=n.type;node.seen=n.seen;node.advertAt=n.advertAt;node.hops=n.hops;node.rssi=n.rssi;node.snr=n.snr;node.live=n.live;node.lat=n.lat;node.lon=n.lon;return node;}
 static bool matchesFilter(const CachedNode &n,int filter){if(!n.book)return false;return filter==0||(filter==1&&n.type==ADV_TYPE_CHAT)||(filter==2&&n.type==ADV_TYPE_REPEATER);}

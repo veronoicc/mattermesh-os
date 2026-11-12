@@ -26,6 +26,7 @@ struct RadioLevels {int noiseFloor=0;float rssi=0,snr=0;bool received=false;};Ra
 // Noise Floor app: one instantaneous RSSI sample (dBm) and the calibrated floor (0 = unknown) for the main loop task; anything but Ok leaves dbm alone (a gap on the chart).
 enum class RssiSample : uint8_t {Ok,Offline,Suspended,Busy};RssiSample radioSampleRssi(float &dbm,int &floorDbm);
 struct RadioCounters {bool ready=false;uint32_t received=0,sent=0;};// the main loop polls these every iteration
+uint32_t txAirtimeMs();// total LoRa transmit airtime since boot (Dispatcher), for the battery drain estimate
 void loop();Snapshot snapshot();RadioCounters radioCounters();std::vector<Node> nodes(int filter,int offset=0,int limit=NODE_CAPACITY);int nodeCount(int filter=0);
 // Contacts page: live nodes first (most recently heard), then saved ones by name; `query` filters names case-insensitively.
 struct ContactPage {std::vector<Node> rows;int total=0,live=0;};ContactPage contacts(int filter,const std::string &query,int offset,int limit);int contactsCount(int filter,const std::string &query);

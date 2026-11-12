@@ -630,7 +630,8 @@ void Renderer::settings(const State &s){
    case KeyboardSection:{std::string codes;for(auto l:mm_kbd::Order)if(s.kbdMask&(1u<<int(l))){if(!codes.empty())codes+=" ";codes+=mm_kbd::info(l).code;}return mm_kbd::enabledCount(s.kbdMask)>1?codes+" (Alt + Space)":"Typing: "+std::string(mm_kbd::info(mm_kbd::Lang(s.kbdLang)).name);}
    case AccentKeySection:return s.accentMode==1?"Right Shift":s.accentMode==2?"Left Shift":"Off";
    case HomeWidgetsSection:return "Beside clock: "+std::string(widgetInfo(s.homeWidget).name);
-   case 21:return std::string("Dictation: ")+device::dictationLanguageName(s.dictationLanguage);case 20:return "Light timers / auto lock";case 5:return s.status.battery<0?"--%":std::to_string(s.status.battery)+"%";
+   case 21:return std::string("Dictation: ")+device::dictationLanguageName(s.dictationLanguage);case 20:return s.pw.sleepOn?"Lights, sleep "+device::timeoutText(s.pw.sleepDelayS):"Lights, sleep off";case 5:return s.status.battery<0?"--%":std::to_string(s.status.battery)+"%";
+   case PowerProfileSection:return s.pw.profile.empty()?"Field / Normal / Max":s.pw.profile;
    case 16:return s.timeSource;case 24:return s.sd?"SD available":"No SD";case 11:return "USB diagnostics";case 17:return "Update your firmware";
    case SecuritySection:return s.sec.on?std::string("PIN on / ask ")+s.sec.requireName:std::string("Off");case BackupSection:return "Save or restore settings";
    case SupportSection:return "Support the project";default:return "Version "+s.version;}};
@@ -876,12 +877,6 @@ void Renderer::section(const State &s){
   {Rect r=AudioBackend;c.text(r.x+7,r.y+3,device::dictationEngineLabel(s.dictationLanguage),Font::ChatMeta,FG,r.w-70);
    c.text(r.x+7,r.y+16,device::dictationLanguageName(s.dictationLanguage),Font::Bold,FG,r.w-70);c.icon(Icon::Back,r.x+r.w-44,r.y+8,12);c.icon(Icon::ChevronRight,r.x+r.w-20,r.y+8,12);
    c.text(r.x+7,r.y+31,s.offlineEngineCompiled?device::dictationModelStatus(s.dictationLanguage,s.dictationModelBytes>0,s.dictationModelBytes):"Model support not compiled",Font::ChatMeta,FG,r.w-14);}
- }else if(s.page==Page::Power){
-  c.sectionLabel(Top+6,"LIGHT TIMERS");
-  const char *names[]={"Display / front-light","Keyboard backlight"};for(int i=0;i<2;i++){Rect r=powerRowRect(i);bool focus=s.powerField==i;c.card(r,focus);auto ink=focus?BG:FG;if(i)c.icon(Icon::Keyboard,r.x+6,r.y+(r.h-16)/2,16,ink);else{g.drawRect(r.x+7,r.y+14,16,10,ink);g.drawFastHLine(r.x+12,r.y+27,6,ink);}c.text(r.x+30,r.y+5,names[i],Font::ChatBody,ink,r.w-50);uint32_t seconds=i?s.keyboardTimeout:s.displayTimeout;std::string value=seconds==0?"Never":seconds>=60?std::to_string(seconds/60)+" minute"+(seconds>=120?"s":""):std::to_string(seconds)+" seconds";c.text(r.x+30,r.y+23,value+(seconds==30?" / default":""),Font::ChatMeta,ink,r.w-50);c.icon(Icon::ChevronRight,r.x+r.w-16,r.y+(r.h-12)/2,12,ink);}
-  c.sectionLabel(timeoutOptionRect(0).y-16,s.powerField?"KEYBOARD TIMEOUT":"DISPLAY TIMEOUT");const char *labels[]={"15s","30s","1m","2m","5m","Never"};const uint32_t values[]={15,30,60,120,300,0};uint32_t selected=s.powerField?s.keyboardTimeout:s.displayTimeout;
-  for(int i=0;i<6;i++){Rect r=timeoutOptionRect(i);c.card(r,selected==values[i]);c.centered(r.x,r.y+(r.h-c.lineHeight(Font::Small))/2,r.w,labels[i],Font::Small,selected==values[i]?BG:FG);}
-  int y=timeoutOptionRect(0).y+44;c.sectionLabel(y,"AUTO LOCK");c.text(Margin+2,y+18,"Lights wake on key or touch.",Font::ChatMeta,FG,W-2*Margin);c.text(Margin+2,y+34,"Locks after 60 s or double SPACE.",Font::ChatMeta,FG,W-2*Margin);
  }else if(s.page==Page::Keyboard){
   // Search on top, one switch per language, and how to switch / reach the extra letters below.
   c.card(KeyboardSearch);auto tail=c.inputTail(s.kbdQuery,KeyboardSearch.w-40,Font::ChatBody);
@@ -969,11 +964,6 @@ void Renderer::section(const State &s){
   const int w=W-2*Margin;int y=n?y0+side+8:y0+8;
   auto para=[&](const std::string &text,Font f,int step){for(auto &line:c.lines(text,w,f)){c.centered(Margin,y,w,line,f);y+=step;}};
   para("MatterMesh OS is free. A donation of any amount on Ko-fi helps hardware and field tests.",Font::ChatMeta,14);y+=4;para("ko-fi.com/mattermeshos",Font::ChatMeta,14);
- }else if(s.page==Page::Battery){
-  c.icon(Icon::Battery,(W-32)/2,Top+10,32);c.centered(Margin,Top+50,W-2*Margin,s.status.battery<0?"--%":std::to_string(s.status.battery)+"%",Font::Clock);
-  c.sectionLabel(Top+108,"DETAILS");valueCard(settingsHalf(0,Top+124),"VOLTAGE",s.voltage<0?"--":std::to_string(s.voltage)+" mV");
-  valueCard(settingsHalf(1,Top+124),"STATE",s.batteryFull?"Full":s.batteryCharging||s.status.charging?"Charging":"On battery");
-  valueCard({Margin,Top+170,W-2*Margin,40},"SOURCE",s.batteryEstimated?"Voltage estimate":"BQ27220 fuel gauge");
  }else if(s.page==Page::Files){
   c.text(Margin,Top+4,s.sd?"SD CARD / ROOT":"NO SD CARD",Font::ChatMeta);
   if(s.files.empty())c.centered(Margin,Top+55,W-2*Margin,"No files available",Font::Body);
@@ -1027,11 +1017,13 @@ void Renderer::section(const State &s){
 #include "scheduled_renderer.inc"
 #include "security_renderer.inc"
 #include "backup_renderer.inc"
+#include "power_renderer.inc"
 void Renderer::radioLinkAsk(){Rect panel=overlayPanel();c.text(Margin+8,Top+15,"Companion connected",Font::ChatTitle,FG,panel.w-16);c.text(Margin+8,Top+50,"Download the messages",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+66,"from the companion?",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+90,"No: they stay on it,",Font::ChatMeta,FG,panel.w-16);c.text(Margin+8,Top+106,"new ones too.",Font::ChatMeta,FG,panel.w-16);c.button(RadioLinkAskNo,"NO");c.button(RadioLinkAskYes,"YES",true);}
 
 void Renderer::draw(const State &s){switch(s.page){
  case Page::SelfTest:selfTestApp(s);break;
  case Page::Security:securityPage(s);break;case Page::Backup:backupPage(s);break;
+ case Page::Power:case Page::Battery:case Page::PowerProfile:powerPages(s);break;
  case Page::RadioLink:case Page::RadioLinkSettings:case Page::WebApp:radioLinkPages(s);break;case Page::TracksApp:case Page::TracksSettings:tracksPages(s);break;case Page::DmPath:dmPathPage(s);break;case Page::Cli:cliApp(s);break;case Page::RxLog:rxLogApp(s);break;case Page::NoiseFloor:noiseApp(s);break;case Page::RptScanner:rptApp(s);break;case Page::Cellular:cellularPage(s);break;case Page::Sms:smsPage(s);break;
  case Page::Notes:notesPage(s);break;
  case Page::QuickMessages:quickPage(s);break;case Page::Delivery:deliveryPage(s);break;case Page::Scheduled:scheduledPage(s);break;
