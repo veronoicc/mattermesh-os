@@ -28,9 +28,41 @@ It speaks the MeshCore companion protocol, so it works with the MeshCore apps an
 - MeshCore companion over Bluetooth, USB and Wi-Fi
 - Full MeshCore companion protocol v14: repeater login and admin console, status, telemetry, trace path (ping), path discovery, signing, flood scopes, stats and tuning, and client repeat mode (Settings → LoRa → Device). Private key import and export stay off unless built with `-D ENABLE_PRIVATE_KEY_EXPORT=1 -D ENABLE_PRIVATE_KEY_IMPORT=1`, as in MeshCore
 - Apps: **Maps** (OpenStreetMap tiles with GPS), **Weather** (Open-Meteo), **Files**, **CLI**, and the field tools **RPT Scanner** (repeaters by SNR / last heard / distance, scan, ping, status, login and console), **RX Log** (every received packet with type, route, hops, RSSI/SNR, filter and CSV export) and **Noise Floor** (live RSSI chart against the calibrated floor, interference warning, CSV export)
-- **Cellular** (A7682E or A7670G, Settings → Cellular): SIM PIN and APN, network routing (Wi-Fi only / Wi-Fi then cellular / cellular only) for Weather and map tiles, an MQTT uplink of received packets in the meshcoretomqtt format (broker, port, credentials, region, TLS), and the **SMS** app (inbox, read, reply, compose, new-message banner)
+- **Cellular** (A7682E or A7670G, Settings → Cellular): SIM PIN and APN, network routing (Wi-Fi only / Wi-Fi then cellular / cellular only) for Weather and map tiles, an MQTT uplink of received packets in the meshcoretomqtt format (broker, port, credentials, region, TLS) with an optional [downlink](#mqtt-downlink) (read and send chats remotely), and the **SMS** app (inbox, read, reply, compose, new-message banner)
 - **GPS tracks** (Tracks app, Settings → GPS tracks): a breadcrumb recorded to `/mattermesh/tracks/` on the SD card (a point per interval and distance, crash-safe rows), distance / time / climb / top speed, GPX 1.1 export next to it (listed in Files), the track drawn in Maps, optional auto-start and GPS kept on while recording
 - Offline dictation in English, German and Italian (hold MIC; the speech model of the language chosen in Settings → Sound / dictation is loaded from the SD card and is distributed separately, see [Offline dictation models](#offline-dictation-models))
+
+## MQTT downlink
+
+Settings → Cellular → MQTT DOWNLINK turns the uplink's broker session into a remote for the chats (Wi-Fi or cellular, same broker, region and TLS settings). Topics are under `meshcore/<REGION>/<PUBKEY>/` as for the packet uplink (`<PUBKEY>` upper-case hex):
+
+| Topic | Direction | Content |
+|---|---|---|
+| `messages` | device → broker | every chat message the node can read (channels it has joined, DMs to it) and every message sent from the device, plus delivery updates (**Publish** switch) |
+| `cmd` | broker → device | JSON commands (QoS 0) |
+| `resp` | device → broker | one reply per command: `{"id":…,"ok":true,"result":…}` or `{"id":…,"ok":false,"error":"…"}` |
+
+Settings: **Downlink** (master switch; off = nothing is subscribed or published), **Cmd token** (shared secret, 8–64 characters, shown masked), **Generate** (a random 24-character token, saved at once and shown only until you move off that row), **Allow send** (off: `send_*` and `advert` are refused, the read-only commands still work), **Publish** (the `messages` stream). Without a token every command is refused.
+
+A command is one JSON object with a string `id` (up to 64 characters, echoed back), the `token` and a `cmd`:
+
+```json
+{"id":"1","token":"<your token>","cmd":"send_channel","channel":"Public","text":"hello"}
+```
+
+| `cmd` | Fields | Result |
+|---|---|---|
+| `send_channel` | `channel` (name, or slot number), `text` | `{"message_id","state"}` |
+| `send_dm` | `to` (contact name, or at least 6 hex characters of its public key), `text` | `{"message_id","state"}` |
+| `advert` | `position` (optional bool) | – |
+| `ping` | – | name, pubkey, uptime, radio, counters |
+| `list_channels`, `list_contacts` | – | `{"items":[…],"count","truncated"}` (contacts: first 40, 1.5 kB at most) |
+
+Sends use the same path as the keyboard: the text limit is MeshCore's (160 bytes, less the sender name on channels), the message lands in the device's chat, journal and delivery tracking, and appears on `messages` with the `message_id` from the reply. At most 10 payloads per minute are accepted (good or bad); the token is compared in constant time.
+
+A `messages` entry: `{"id":"0000002a","event":"message","ts":…,"kind":"channel"|"dm","channel","channel_index"|"contact","pubkey" (12 hex),"sender","text","direction":"in"|"out","hops","route","snr","rssi","state"}`; later `{"id":"0000002a","event":"delivery","ts":…,"state":"Delivered","repeaters","heard","first_repeater"}` entries follow the same `id`. SNR/RSSI are those of the last packet the radio decoded.
+
+Anyone who can publish to `cmd` and knows the token can send as you: use a broker login and TLS, and keep Allow send off if you only want to read.
 
 ## Build
 

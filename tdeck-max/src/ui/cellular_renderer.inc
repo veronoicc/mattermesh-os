@@ -20,6 +20,7 @@ void Renderer::cellularPage(const State &s){
   if(kind==CellInfo){c.card(r,false,6);c.text(r.x+8,r.y+1,v.mqttState,Font::Bold,FG,r.w-16);c.text(r.x+8,r.y+14,v.mqttCounts,Font::ChatMeta,FG,r.w-16);continue;}
   bool edit=v.editing==row,focus=v.focus==row+1||edit;c.card(r,focus,6);auto ink=focus?BG:FG;auto paper=focus?FG:BG;
   if(kind==CellStep){c.text(r.x+8,r.y+7,v.value[row],Font::Bold,ink,r.w-60);c.icon(Icon::Back,r.x+r.w-44,r.y+(r.h-12)/2,12,ink);c.icon(Icon::ChevronRight,r.x+r.w-20,r.y+(r.h-12)/2,12,ink);continue;}
+  if(kind==CellAction&&v.on[row]){c.text(r.x+8,r.y+1,"New token (shown once)",Font::ChatMeta,ink,r.w-16);c.text(r.x+8,r.y+14,v.value[row],Font::Bold,ink,r.w-16);continue;}// the generated token, visible until the page moves on
   c.text(r.x+8,r.y+8,cellRowLabel(row),Font::ChatMeta,ink,72);
   if(kind==CellToggle){bool on=v.on[row];int pw=44,px=r.x+r.w-pw-6,py=r.y+4;
    if(on)g.fillRoundRect(px,py,pw,20,10,ink);else g.drawRoundRect(px,py,pw,20,10,ink);c.centered(px,py+4,pw,on?"ON":"OFF",Font::Bold,on?paper:ink);continue;}

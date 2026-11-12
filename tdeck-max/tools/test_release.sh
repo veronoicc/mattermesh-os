@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 python3 tools/check_line_comments.py src
 bash tools/test_ui.sh
 mkdir -p artifacts/release-tests
-for test in services companion_client sd_replace keyboard_layout audio_pcm ringtones vibrations dictation_policy pending_keys lock repeater_observer time_sync sky home_data repeat_policy remote_cli motion_policy rx_log_view noise_stats rpt_rank track_log modem_at mqtt_uplink modem_engine net_route sms_inbox cellular_page sms_page; do
+for test in services companion_client sd_replace keyboard_layout audio_pcm ringtones vibrations dictation_policy pending_keys lock repeater_observer time_sync sky home_data repeat_policy remote_cli motion_policy rx_log_view noise_stats rpt_rank track_log modem_at mqtt_uplink mqtt_downlink modem_engine net_route sms_inbox cellular_page sms_page; do
   g++ -std=c++17 -O2 -Isrc "sim/test_${test}.cpp" -o "artifacts/release-tests/${test}"
   "artifacts/release-tests/${test}"
 done

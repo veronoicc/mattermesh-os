@@ -30,7 +30,9 @@ int main(){
   b=base();b.cell.editing=CellPin;b.cell.input="12";auto e1=shot(b);assert(e1!=ref);b.cell.input="123";assert(shot(b)!=e1);
   b=base();b.cell.value[CellApn]="other";assert(shot(b)!=ref);
   // Each switch row shows its state (rows visible at the scroll that holds them).
-  for(int row:{CellRoaming,CellMqtt,CellTls}){State t=base();t.cell.scroll=std::min(row,cellMaxScroll());auto off=shot(t);t.cell.on[row]=true;assert(shot(t)!=off);}
+  for(int row:{CellRoaming,CellMqtt,CellTls,CellDownlink,CellDlSend,CellDlPublish}){State t=base();t.cell.scroll=std::min(row,cellMaxScroll());auto off=shot(t);t.cell.on[row]=true;assert(shot(t)!=off);}
+  // The generate row shows the new token (revealed) in place of its hint, and the token row shows its masked value.
+  {State t=base();t.cell.scroll=std::min(int(CellDlToken),cellMaxScroll());auto hint=shot(t);t.cell.on[CellDlGenerate]=true;t.cell.value[CellDlGenerate]="ABCDEFGHJKLMNPQRSTUVWXYZ";assert(shot(t)!=hint);t=base();t.cell.scroll=std::min(int(CellDlToken),cellMaxScroll());t.cell.value[CellDlToken]="**********";assert(shot(t)!=hint);}
   {State t=base();t.cell.scroll=cellMaxScroll();auto last=shot(t);t.cell.mqttState="Failed";assert(shot(t)!=last);t=base();t.cell.scroll=cellMaxScroll();t.cell.mqttCounts="1 published";assert(shot(t)!=last);}
   b=base();b.cell.focus=1;auto f1=shot(b);b.cell.focus=2;assert(shot(b)!=f1&&f1!=ref);
  }

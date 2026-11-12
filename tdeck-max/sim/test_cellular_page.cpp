@@ -4,13 +4,15 @@
 using namespace mm;using device::CellularSettings;using device::NetMode;
 int main(){
  // Rows: kinds and labels; the info row is last and never focusable.
- assert(CellRows==14&&CellFocusCount==CellRows);
+ assert(CellRows==19&&CellFocusCount==CellRows&&CellDlPublish==CellMqttInfo-1);
  assert(cellKind(CellPin)==CellText&&cellKind(CellApn)==CellText&&cellKind(CellApnPass)==CellText&&cellKind(CellNetwork)==CellStep);
  assert(cellKind(CellRoaming)==CellToggle&&cellKind(CellMqtt)==CellToggle&&cellKind(CellTls)==CellToggle&&cellKind(CellPort)==CellText&&cellKind(CellMqttInfo)==CellInfo);
+ assert(cellKind(CellDownlink)==CellToggle&&cellKind(CellDlSend)==CellToggle&&cellKind(CellDlPublish)==CellToggle&&cellKind(CellDlToken)==CellText&&cellKind(CellDlGenerate)==CellAction);
+ assert(std::string(cellGroup(CellTls))=="MQTT UPLINK"&&std::string(cellGroup(CellDownlink))=="MQTT DOWNLINK"&&std::string(cellGroup(CellMqttInfo))=="MQTT DOWNLINK"&&std::string(cellGroup(CellRegion))=="MQTT UPLINK");
  for(int r=0;r<CellRows;r++)assert(*cellRowLabel(r)&&*cellGroup(r));
  // Focus 0 is the Modem switch, 1..13 the rows 0..12; clamped; the info row has no focus.
  assert(cellMoveFocus(0,-1)==0&&cellMoveFocus(0,1)==1&&cellMoveFocus(CellFocusCount-1,1)==CellFocusCount-1&&cellMoveFocus(5,-1)==4);
- assert(cellFocusRow(0)==-1&&cellFocusRow(1)==CellPin&&cellFocusRow(CellFocusCount-1)==CellTls);
+ assert(cellFocusRow(0)==-1&&cellFocusRow(1)==CellPin&&cellFocusRow(CellFocusCount-1)==CellDlPublish);
  // Scroll follows the focus so the focused row is always in the window; the switch leaves it alone.
  for(int start=0;start<=cellMaxScroll();start++)for(int f=0;f<CellFocusCount;f++){int s=cellFollow(start,f);assert(s>=0&&s<=cellMaxScroll());int row=cellFocusRow(f);if(row>=0)assert(row>=s&&row<s+CellVisible);else assert(s==start);}
  assert(cellMaxScroll()==CellRows-CellVisible&&cellPageScroll(0,false)==0&&cellPageScroll(0,true)==CellVisible&&cellPageScroll(cellMaxScroll(),true)==cellMaxScroll()&&cellPageScroll(cellMaxScroll(),false)==cellMaxScroll()-CellVisible);
@@ -25,6 +27,8 @@ int main(){
  assert(cellNextTlsPort(1883,true)==8883&&cellNextTlsPort(8883,false)==1883&&cellNextTlsPort(1234,true)==1234&&cellNextTlsPort(8883,true)==8883&&cellNextTlsPort(1883,false)==1883);
  {CellularSettings t;cellToggle(t,CellTls);assert(t.mqttTls&&t.port==8883);cellToggle(t,CellTls);assert(!t.mqttTls&&t.port==1883);t.port=9999;cellToggle(t,CellTls);assert(t.port==9999);
   cellToggle(t,CellRoaming);assert(t.roaming);cellToggle(t,CellMqtt);assert(t.mqtt);cellToggle(t,CellMqtt);assert(!t.mqtt);}
+ {CellularSettings t;assert(!t.downlink&&!t.dlSend&&t.dlPublish);cellToggle(t,CellDownlink);assert(t.downlink);cellToggle(t,CellDlSend);assert(t.dlSend);cellToggle(t,CellDlPublish);assert(!t.dlPublish);cellToggle(t,CellDownlink);assert(!t.downlink&&t.dlSend);
+  assert(cellRowOn(t,CellDlSend)&&!cellRowOn(t,CellDlPublish)&&!cellRowOn(t,CellDownlink));t.dlToken="Tok3nTok3n";assert(cellRowText(t,CellDlToken)=="**********"&&cellEditText(t,CellDlToken)=="Tok3nTok3n"&&cellRowText(CellularSettings(),CellDlToken)=="not set"&&cellSecret(CellDlToken));}
  // Masking and display values.
  assert(cellMaskedText("")==""&&cellMaskedText("1234")=="****");
  {CellularSettings t;assert(cellRowText(t,CellPin)=="not set"&&cellRowText(t,CellHost)=="not set"&&cellRowText(t,CellApn)=="not set");t.pin="1234";t.apnPass="secret";t.apn="internet";t.port=8883;t.network=NetMode::CellOnly;
@@ -44,6 +48,10 @@ int main(){
   assert(cellCommit(t,CellRegion,"lin",why)&&t.region=="LIN");assert(!cellCommit(t,CellRegion,"TOOLONGREGION",why)&&t.region=="LIN"&&why=="Region: A-Z 0-9, up to 8");
   assert(cellCommit(t,CellPort,"abc",why)&&t.port==1883&&why=="Port: 1-65535, reset to 1883");why="";assert(cellCommit(t,CellPort,"2000",why)&&t.port==2000&&why.empty());
   assert(cellCommit(t,CellMqttUser,"u",why)&&t.mqttUser=="u"&&cellCommit(t,CellMqttPass,"p",why)&&t.mqttPass=="p"&&cellCommit(t,CellApnUser,"au",why)&&t.apnUser=="au");}
+ {CellularSettings t;std::string why;assert(cellCommit(t,CellDlToken," Tok3nTok3n ",why)&&t.dlToken=="Tok3nTok3n"&&why.empty());
+  assert(!cellCommit(t,CellDlToken,"short",why)&&t.dlToken=="Tok3nTok3n"&&why=="Token: 8-64 characters, no spaces");assert(!cellCommit(t,CellDlToken,"has a space1",why)&&t.dlToken=="Tok3nTok3n");
+  assert(cellCommit(t,CellDlToken,"",why)&&t.dlToken.empty());
+  assert(cellAcceptChar(CellDlToken,"",'a')=='a'&&!cellAcceptChar(CellDlToken,"",' ')&&!cellAcceptChar(CellDlToken,"",'"')&&!cellAcceptChar(CellDlToken,"",'\\')&&!cellAcceptChar(CellDlToken,std::string(64,'a'),'a')&&cellAcceptChar(CellDlToken,std::string(63,'a'),'a')=='a');}
  // Editor start text: secrets are shown plain while edited.
  {CellularSettings t;t.pin="1234";t.port=8883;assert(cellEditText(t,CellPin)=="1234"&&cellEditText(t,CellPort)=="8883");}
  // Status helpers.

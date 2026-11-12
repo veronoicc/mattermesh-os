@@ -17,6 +17,7 @@ struct CellularSettings {
  std::string pin,apn,apnUser,apnPass;
  bool mqtt=false,mqttTls=false;// MQTT uplink of the received mesh packets
  std::string host,mqttUser,mqttPass,region;uint16_t port=1883;
+ bool downlink=false,dlSend=false,dlPublish=true;std::string dlToken;// MQTT downlink (mqtt_downlink.h): commands in with the shared token, "Allow sending", chat messages published
 };
 constexpr size_t CellularPinMax=8,CellularTextMax=63,CellularRegionMax=8;
 inline bool validSimPin(const std::string &s){if(s.empty())return true;if(s.size()<4||s.size()>CellularPinMax)return false;for(char c:s)if(c<'0'||c>'9')return false;return true;}

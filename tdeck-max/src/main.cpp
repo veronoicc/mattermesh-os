@@ -352,6 +352,7 @@ mm::State uiState();
 void scrollChat(int delta){auto s=radioJournal.summary(activeChat);int count=s?s->total:0;chatOffset=device::historyStep(chatOffset,delta,count);render();}
 void incomingRadio(const matter::Received &message);
 void deliveredRadio(const matter::Delivery &delivery);
+void mqttDlLoop();void mqttDlIncoming(const matter::Received &m,int chat,uint32_t token);void mqttDlOutgoing(int chat,uint32_t token,const String &body,const String &state);void mqttDlDelivery(const matter::Delivery &d);bool mqttDlSerial(const String &s);// MQTT downlink (mqtt_downlink_app.inc)
 void renderChat(){
  chatDrafts.recoverIfEmpty(activeChat,input);
  mm::Renderer r(frame);auto state=uiState();firstRepeaterPainted=!state.firstRepeater.empty()&&state.firstRepeater.compare(0,7,"DM path")!=0;r.chat(state);dmPathLine=r.dmPathLineOut;renderedChatMessages=r.snapshotMessages(state);paintedComposerTop=r.chatComposerTop;
@@ -564,9 +565,10 @@ void incomingRadio(const matter::Received &m){
  incomingBanner.receive(id,m.sender.c_str(),m.body.c_str(),millis(),deviceLocked,screen==Screen::Chat&&activeChat==id,mutedChannels&(uint32_t(1)<<id));
  device::restoreUnreadCounts(radioJournal.index,radioJournal.readTokens,unreadMessages,size_t(chatCount));
  if(deviceLocked){lockMessages.receive(lockMessageTokens(),r.token);lockMessageShownAt=millis();lockHintUntil=0;lockReadError.clear();}
+ mqttDlIncoming(m,id,r.token);
  if(!(mutedChannels&(uint32_t(1)<<id)))onIncomingMessage(device::mentionsName(m.body.c_str(),matter::snapshot().config.name.c_str()));markRadioDirty();
 }
-void deliveredRadio(const matter::Delivery &d){if(d.state.length())Serial.printf("TX_STATE token=%08lx state=%s\n",(unsigned long)d.token,d.state.c_str());if(d.txComplete&&quickReply.active&&quickReply.pending&&d.token==quickReply.txToken){quickTxReady=true;quickTxSuccess=d.txSuccess;quickTxToken=d.token;}if(!radioJournal.index.find(d.token))return;if(firstRepeater.observe(d.token,d.firstRepeater.c_str(),millis())){firstRepeaterPainted=false;}if(!(d.repeaters>=0?radioJournal.repeats(d.token,d.repeaters,d.heard):radioJournal.update(d.token,d.state)))notice="ACK received / SD save failed";markRadioDirty();}
+void deliveredRadio(const matter::Delivery &d){mqttDlDelivery(d);if(d.state.length())Serial.printf("TX_STATE token=%08lx state=%s\n",(unsigned long)d.token,d.state.c_str());if(d.txComplete&&quickReply.active&&quickReply.pending&&d.token==quickReply.txToken){quickTxReady=true;quickTxSuccess=d.txSuccess;quickTxToken=d.token;}if(!radioJournal.index.find(d.token))return;if(firstRepeater.observe(d.token,d.firstRepeater.c_str(),millis())){firstRepeaterPainted=false;}if(!(d.repeaters>=0?radioJournal.repeats(d.token,d.repeaters,d.heard):radioJournal.update(d.token,d.state)))notice="ACK received / SD save failed";markRadioDirty();}
 size_t messageByteLimit(int conversation){int chat=conversation<0?activeChat:conversation;bool direct=chat>=0&&chat<chatCount&&chats[chat].direct;return radioLinkActive()?radioLinkTextLimit(direct):matter::textLimit(direct);}
 bool queueRadioMessage(String body,const String *scopeOverride,int conversation,uint32_t *queuedToken){int chat=conversation<0?activeChat:conversation;if(chat<0||chat>=chatCount){notice="Conversation unavailable";return false;}body.trim();if(!body.length()){notice="Message empty";return false;}
  if(body.length()>messageByteLimit(chat)){notice=matter::messageLimitError(messageByteLimit(chat)).c_str();return false;}
@@ -578,6 +580,7 @@ bool queueRadioMessage(String body,const String *scopeOverride,int conversation,
  if(!radioJournal.append(r)){notice="SD save failed / not sent";return false;}archivePager.appended(chat);chatRowsRevision++;
  device::restoreUnreadCounts(radioJournal.index,radioJournal.readTokens,unreadMessages,size_t(chatCount));
  String reason;bool ok=radioLinkActive()?radioLinkChatSend(chat,body,r.token,reason):matter::send(chat,peerKeys[chat],r.scope,body,r.token,reason);radioJournal.update(r.token,ok?reason:"Not sent: "+reason);
+ if(ok)mqttDlOutgoing(chat,r.token,body,reason);
  if(ok){if(queuedToken)*queuedToken=r.token;if(chat==activeChat)chatOffset=0;firstRepeater.sent(r.token,chat);}notice=reason;Serial.printf("RADIO_MESSAGE_QUEUED ok=%d\n",ok);return ok;
 }
 void submitRadio(){if(device::audioBusy()||!input.length())return;if(queueRadioMessage(input)){input="";inputCursor=-1;chatDrafts.clear(activeChat);}else{chatToast(notice,3000);}render();}
@@ -1125,6 +1128,7 @@ String *editableField(){
 #include "tracks_app.inc"
 #include "radio_link_app.inc"
 #include "cellular_app.inc"
+#include "mqtt_downlink_app.inc"
 #include "sms_app.inc"
 #include "web_app.inc"
 #include "cli_app.inc"
@@ -2040,6 +2044,7 @@ void handle(const String &s) {
  if(s=="contacts rows"){auto page=matter::contacts(discoverFilter,contactQuery.c_str(),nodeScroll,mm::ContactRows);for(size_t i=0;i<page.rows.size();i++){auto &n=page.rows[i];Serial.printf("CONTACT_ROW index=%u lat=%.6f type=%u live=%d hops=%d rssi=%.0f snr=%.1f key=%s name=%s\n",unsigned(nodeScroll+i),n.lat/1e6,n.type,n.live,n.hops,n.rssi,n.snr,n.key.c_str(),n.name.c_str());}Serial.printf("CONTACT_ROWS total=%d live=%d\n",page.total,page.live);return;}
  if(s.startsWith("cli ")){size_t before=cliOutput.size();cliRun(s.substring(4).c_str());render();Serial.printf("CLI lines=%u\n",unsigned(cliOutput.size()));for(size_t i=before<cliOutput.size()?before:0;i<cliOutput.size();i++)Serial.printf("CLI> %s\n",cliOutput[i].c_str());return;}
  if(radioLinkSerial(s))return;
+ if(mqttDlSerial(s))return;
  if(webSerial(s))return;
  if(tracksSerial(s))return;
  if(s=="channel menu status"){auto gps=device::locationState();bool valid=!device::gpsCoordinateMessage(gps.available,gps.enabled,gps.fix,gps.fixAgeMs,gps.latitude,gps.longitude).empty();Serial.printf("CHANNEL_MENU_STATUS key_view=%d qr_size=%d key_chars=%u count=%d open=%d target=%d muted=%d delete_confirm=%d position=%d position_ready=%d\n",channelKeyView,channelQrSize,channelKeyHex.length(),chatCount,channelOptions,channelOptionTarget,channelOptionTarget>=0&&channelOptionTarget<chatCount&&bool(mutedChannels&(uint32_t(1)<<channelOptionTarget)),deleteChannelConfirm,positionShare,valid);return;}
@@ -2252,6 +2257,7 @@ void loop(){
  }else if(c!='\r'&&command.length()<256)command+=c;}
  matter::loop();hapticLoop();device::audioLoop();webLoop();device::tracksLoop();tracksUiLoop();
  device::modemLoop();smsLoop();cellularTick();{static uint32_t idAt=0;if(!idAt||uint32_t(millis()-idAt)>=5000){idAt=millis()|1;device::mqttSetIdentity(matter::snapshot().config.name.c_str(),matter::ownKey().c_str());}}
+ mqttDlLoop();
  if(smsBannerUntil&&int32_t(smsBannerUntil-millis())<=0){smsBannerUntil=0;repaintNow();}// the SMS card runs out
  if(!deviceLocked&&screen==Screen::Chat&&archivePager.poll(radioJournal)){chatRowsRevision++;repaintNow();}
  if(deviceLocked)incomingBanner.clear();else if(incomingBanner.expire(millis())){repaintNow();}

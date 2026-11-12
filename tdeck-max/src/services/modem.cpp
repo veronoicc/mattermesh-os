@@ -11,7 +11,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
-// NVS "mmcell": the settings (modem, net, roam, pin, apn, apnu, apnp, mqtt, mtls, host, mport, muser, mpass, region) and the
+// NVS "mmcell": the settings (modem, net, roam, pin, apn, apnu, apnp, mqtt, mtls, host, mport, muser, mpass, region, dl, dlsend, dlpub, dltok) and the
 // unread SMS hashes ("unread"). The engine (modem_engine.h) runs in the "matter-modem" task; every access to it holds `lock`.
 // The XL9555 and Wire belong to the main loop, so the task only requests pin levels and modemLoop() applies them.
 namespace device {
@@ -32,11 +32,13 @@ static UartIo uartIo;
 static void load(){if(!prefs.begin("mmcell",false))return;cfg.modem=prefs.getBool("modem",false);cfg.network=NetMode(constrain(prefs.getUChar("net",uint8_t(NetMode::WifiThenCell)),0,NetModeCount-1));cfg.roaming=prefs.getBool("roam",false);
  cfg.pin=prefs.getString("pin","").c_str();cfg.apn=prefs.getString("apn","").c_str();cfg.apnUser=prefs.getString("apnu","").c_str();cfg.apnPass=prefs.getString("apnp","").c_str();
  cfg.mqtt=prefs.getBool("mqtt",false);cfg.mqttTls=prefs.getBool("mtls",false);cfg.host=prefs.getString("host","").c_str();cfg.port=uint16_t(prefs.getUInt("mport",defaultMqttPort(cfg.mqttTls)));cfg.mqttUser=prefs.getString("muser","").c_str();cfg.mqttPass=prefs.getString("mpass","").c_str();cfg.region=prefs.getString("region","").c_str();
+ cfg.downlink=prefs.getBool("dl",false);cfg.dlSend=prefs.getBool("dlsend",false);cfg.dlPublish=prefs.getBool("dlpub",true);cfg.dlToken=prefs.getString("dltok","").c_str();
  size_t n=prefs.getBytesLength("unread")/sizeof(uint32_t);if(n&&n<=SmsUnreadMax){inbox.unreadHashes.resize(n);prefs.getBytes("unread",inbox.unreadHashes.data(),n*sizeof(uint32_t));}prefs.end();}
 static bool store(const CellularSettings &c){if(!prefs.begin("mmcell",false))return false;bool ok=true;
  ok&=prefs.putBool("modem",c.modem)==1;ok&=prefs.putUChar("net",uint8_t(c.network))==1;ok&=prefs.putBool("roam",c.roaming)==1;
  auto text=[&](const char *key,const std::string &v){if(v.empty())ok&=!prefs.isKey(key)||prefs.remove(key);else ok&=prefs.putString(key,v.c_str())==v.size();};
- text("pin",c.pin);text("apn",c.apn);text("apnu",c.apnUser);text("apnp",c.apnPass);ok&=prefs.putBool("mqtt",c.mqtt)==1;ok&=prefs.putBool("mtls",c.mqttTls)==1;text("host",c.host);ok&=prefs.putUInt("mport",c.port)==sizeof(uint32_t);text("muser",c.mqttUser);text("mpass",c.mqttPass);text("region",c.region);prefs.end();return ok;}
+ text("pin",c.pin);text("apn",c.apn);text("apnu",c.apnUser);text("apnp",c.apnPass);ok&=prefs.putBool("mqtt",c.mqtt)==1;ok&=prefs.putBool("mtls",c.mqttTls)==1;text("host",c.host);ok&=prefs.putUInt("mport",c.port)==sizeof(uint32_t);text("muser",c.mqttUser);text("mpass",c.mqttPass);text("region",c.region);
+ ok&=prefs.putBool("dl",c.downlink)==1;ok&=prefs.putBool("dlsend",c.dlSend)==1;ok&=prefs.putBool("dlpub",c.dlPublish)==1;text("dltok",c.dlToken);prefs.end();return ok;}
 static void saveUnread(){if(!prefs.begin("mmcell",false))return;if(inbox.unreadHashes.empty()){if(prefs.isKey("unread"))prefs.remove("unread");}else prefs.putBytes("unread",inbox.unreadHashes.data(),inbox.unreadHashes.size()*sizeof(uint32_t));prefs.end();}
 static void startUart(){if(uartOn)return;uartOn=true;pinMode(BOARD_A7682E_DTR,OUTPUT);digitalWrite(BOARD_A7682E_DTR,LOW);pinMode(BOARD_A7682E_RI,INPUT_PULLUP);Serial1.setRxBufferSize(4096);Serial1.begin(115200,SERIAL_8N1,BOARD_A7682E_TXD,BOARD_A7682E_RXD);}
 static void task(void*){for(;;){{Guard g;engine->tick();dataUp=engine->bearerUp();}vTaskDelay(pdMS_TO_TICKS(10));}}

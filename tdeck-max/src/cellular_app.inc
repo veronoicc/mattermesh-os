@@ -5,7 +5,8 @@
 #include "services/mqtt.h"
 #include "ui/cellular_layout.h"
 static int cellFocus=0,cellScroll=0,cellEditing=-1;static String cellInput;
-static uint32_t cellSeenRevision=0xffffffffu,cellSeenPublished=0,cellSeenDropped=0;static size_t cellSeenQueued=0;static device::MqttState cellSeenMqtt=device::MqttState::Off;
+static uint32_t cellSeenRevision=0xffffffffu,cellSeenPublished=0,cellSeenDropped=0,cellSeenCommands=0;static size_t cellSeenQueued=0;static device::MqttState cellSeenMqtt=device::MqttState::Off;
+static std::string cellGenerated;// the token just generated: shown on its row only while that row stays focused
 static bool cellPage(){return screen==Screen::Section&&section==mm::CellularSection;}
 // Stores a changed copy and tells the outcome; the page repaints either way.
 static void cellStore(const device::CellularSettings &next,const char *saved="Saved"){notice=device::cellularApply(next)?saved:"Save failed";render();}
@@ -15,12 +16,13 @@ void cellularCompose(mm::State &v){
  w.modem=c.modem;w.phase=st.phase;w.data=st.data;w.model=st.model;w.op=st.operatorName;w.ip=st.ip;w.message=st.message;w.csq=st.csq;w.bars=st.bars;w.rat=st.rat;w.simReady=st.simReady;w.roaming=st.roaming;
  w.focus=cellFocus;w.scroll=cellScroll;w.editing=cellEditing;w.input=cellInput.c_str();
  for(int r=0;r<mm::CellRows;r++){w.value[r]=mm::cellRowText(c,r);w.on[r]=mm::cellRowOn(c,r);}
- w.mqttState=std::string("MQTT: ")+device::mqttStateText(mq.state);
+ if(cellGenerated.empty()||cellFocus!=mm::CellDlGenerate+1)cellGenerated.clear();else{w.on[mm::CellDlGenerate]=true;w.value[mm::CellDlGenerate]=cellGenerated;}
+ w.mqttState=std::string("MQTT: ")+device::mqttStateText(mq.state);if(c.downlink)w.mqttState=c.dlToken.empty()?"MQTT: set a command token":w.mqttState+" / "+std::to_string(mq.commands)+" cmd";
  w.mqttCounts=std::to_string(mq.published)+" sent / "+std::to_string(mq.dropped)+" dropped / "+std::to_string(unsigned(mq.queued))+" queued";}
 String *cellularField(){return cellPage()&&cellEditing>=0?&cellInput:nullptr;}
-void cellularLeft(){cellEditing=-1;cellInput="";cellFocus=0;cellScroll=0;}
+void cellularLeft(){cellEditing=-1;cellInput="";cellFocus=0;cellScroll=0;cellGenerated.clear();}
 void cellularTick(){if(!cellPage())return;auto st=device::modemStatus();auto mq=device::mqttStatus();
- if(st.revision!=cellSeenRevision||mq.published!=cellSeenPublished||mq.dropped!=cellSeenDropped||mq.queued!=cellSeenQueued||mq.state!=cellSeenMqtt){cellSeenRevision=st.revision;cellSeenPublished=mq.published;cellSeenDropped=mq.dropped;cellSeenQueued=mq.queued;cellSeenMqtt=mq.state;markRadioDirty();}}
+ if(st.revision!=cellSeenRevision||mq.published!=cellSeenPublished||mq.dropped!=cellSeenDropped||mq.queued!=cellSeenQueued||mq.state!=cellSeenMqtt||mq.commands!=cellSeenCommands){cellSeenRevision=st.revision;cellSeenPublished=mq.published;cellSeenDropped=mq.dropped;cellSeenQueued=mq.queued;cellSeenMqtt=mq.state;cellSeenCommands=mq.commands;markRadioDirty();}}
 static void cellStartEdit(int row){cellEditing=row;cellInput=mm::cellEditText(device::cellularSettings(),row).c_str();cellSetFocus(row+1);render();}
 // ENTER, a tap elsewhere or the same card again: the text is validated and stored; invalid keeps the old value and says why.
 static void cellFinishEdit(){int row=cellEditing;cellEditing=-1;std::string text=cellInput.c_str();cellInput="";if(row<0)return;
@@ -30,8 +32,10 @@ static void cellFinishEdit(){int row=cellEditing;cellEditing=-1;std::string text
 static void cellModemToggle(){auto next=device::cellularSettings();next.modem=!next.modem;cellStore(next,next.modem?"Modem on":"Modem off");}
 static void cellStep(int dir){auto next=device::cellularSettings();next.network=mm::cellCycleNetMode(next.network,dir);cellStore(next);}
 static void cellToggleRow(int row){auto next=device::cellularSettings();mm::cellToggle(next,row);cellStore(next);}
-// Activates a row: switch, step forward or edit.
-static void cellActivate(int row){mm::CellKind k=mm::cellKind(row);if(k==mm::CellToggle)cellToggleRow(row);else if(k==mm::CellStep)cellStep(1);else if(k==mm::CellText)cellStartEdit(row);}
+// A fresh random token (saved at once), revealed on its row until the focus leaves it. esp_random is the hardware RNG (true random while Wi-Fi or Bluetooth is on).
+static void cellGenerate(){auto next=device::cellularSettings();next.dlToken=mqtt_downlink::generateToken(esp_random);if(device::cellularApply(next)){cellGenerated=next.dlToken;notice="New token saved, shown once";}else{cellGenerated.clear();notice="Save failed";}render();}
+// Activates a row: switch, step forward, generate or edit.
+static void cellActivate(int row){mm::CellKind k=mm::cellKind(row);if(k==mm::CellToggle)cellToggleRow(row);else if(k==mm::CellStep)cellStep(1);else if(k==mm::CellAction)cellGenerate();else if(k==mm::CellText)cellStartEdit(row);}
 bool cellularKey(char c){
  if(c=='\b')return false;// Backspace: the generic field edit / Back
  if(!cellPage())return false;
